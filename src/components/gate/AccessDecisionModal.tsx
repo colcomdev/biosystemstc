@@ -345,7 +345,7 @@ export const AccessDecisionModal: React.FC<AccessDecisionModalProps> = ({
                 </span>
                 <ol className="list-decimal pl-4 space-y-0.5 text-[11px] text-amber-200/90">
                   <li>Direct vehicle immediately into Outer Quarantine Bay (do not pass tire dip).</li>
-                  <li>Hand visitor the ASF Biosecurity Declaration Notice.</li>
+                  <li>Hand visitor the Biosecurity Declaration Notice.</li>
                   <li>Await security officer acknowledgment on the central dashboard.</li>
                 </ol>
               </div>

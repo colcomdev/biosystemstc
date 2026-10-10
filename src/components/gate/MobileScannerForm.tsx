@@ -327,7 +327,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
                 </span>
               </div>
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Livestock Biosecurity Interlock • African Swine Fever / FMD Prevention
+                Livestock Biosecurity Interlock & Access Control
               </p>
             </div>
           </div>
@@ -623,7 +623,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
           <div className={`text-xs font-bold uppercase tracking-wider text-amber-500 flex items-center justify-between border-b pb-2 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
             <div className="flex items-center gap-1.5">
               <AlertOctagon className="w-4 h-4 text-amber-500" />
-              Section 2: African Swine Fever Biosecurity Declarations
+              DECLARATION
             </div>
             <span className="text-[10px] text-slate-400 font-normal">
               {questions.filter((q) => q.type !== 'SIGNATURE').length} active gate checks

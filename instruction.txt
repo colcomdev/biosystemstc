@@ -1,0 +1,92 @@
+================================================================================
+INNSCOR AFRICA LTD (Colcom Foods) T/A TRIPLE C PIGS
+MOBILE VISITOR MANAGEMENT & BIOSECURITY GATE ACCESS DECISION SYSTEM
+PRODUCTION-READY SETUP & AUTOMATED DATABASE GUIDE (NO DOCKER REQUIRED)
+================================================================================
+
+1. SYSTEM PREREQUISITES
+--------------------------------------------------------------------------------
+- Node.js: v18.x or v20.x LTS installed (https://nodejs.org)
+- npm: v9.x or higher
+- PostgreSQL: v14+ or v16+ (running locally or accessible on your network)
+
+2. SIMPLE CONFIGURATION (.env)
+--------------------------------------------------------------------------------
+The project features automatic zero-touch database provisioning. You do NOT
+need to run manual psql commands or manual database creation scripts.
+
+Simply specify your PostgreSQL server credentials and desired database name in 
+the root `.env` file:
+
+  # Server Port
+  PORT=3000
+
+  # PostgreSQL Server Credentials
+  DB_HOST=localhost
+  DB_PORT=5432
+  DB_USER=postgres
+  DB_PASSWORD=your_postgres_password
+  DB_NAME=colcom_biosecurity_db
+
+  # (Alternatively, you can provide a standard DATABASE_URL connection string):
+  # DATABASE_URL=postgresql://postgres:your_postgres_password@localhost:5432/colcom_biosecurity_db
+
+  # Corporate Email Alerts (Triple C SOC)
+  SMTP_HOST=smtp.triplecpigs.co.zw
+  SMTP_PORT=587
+  SMTP_USER=soc@triplecpigs.co.zw
+  SMTP_PASS=your_email_password
+  EMAIL_FROM=no-reply.soc@triplecpigs.co.zw
+
+3. STARTING THE APPLICATION (AUTOMATIC DB & TABLE CREATION)
+--------------------------------------------------------------------------------
+From the project root folder, simply run:
+
+  npm install
+  npm run dev
+
+WHAT HAPPENS ON STARTUP:
+1. The application automatically connects to your PostgreSQL server using the
+   credentials specified in .env.
+2. It checks if the database (e.g. colcom_biosecurity_db) exists. If not, it
+   automatically creates it (CREATE DATABASE colcom_biosecurity_db).
+3. It connects to the database and automatically creates all required tables
+   if they do not exist:
+     - system_users (Admin account)
+     - system_settings (Theme, branding, thresholds)
+     - email_config (Triple C SOC alert recipients, schedule)
+     - form_questions (Dynamic biosecurity question engine)
+     - visitors (Master pre-approved visitors registry)
+     - visits (Access decision records & visitor audit logs)
+     - biosecurity_alerts (Quarantine hold incidents)
+     - email_dispatch_logs (Outbound notification audit logs)
+4. It seeds baseline data (default admin, baseline questions, baseline visitors).
+5. The full-stack applet starts immediately on http://localhost:3000.
+
+4. USER INTERFACES & CREDENTIALS
+--------------------------------------------------------------------------------
+- Handheld Gate Mobile Surface:
+  http://localhost:3000
+  Optimized for handheld Android/iOS gate tablets & barcode/QR scanners.
+  Strictly isolated for gate security operators (no administrative controls).
+
+- Administrative Dashboard Surface:
+  http://localhost:3000 (Click "Security Admin Portal" or navigate to /#admin)
+  Default Username: admin
+  Default Password: admin
+  * Note: Email MFA is disabled by default for seamless direct login. You can
+    enable it at any time in Dashboard -> Settings.
+
+5. PRODUCTION BUILD (NO DOCKER)
+--------------------------------------------------------------------------------
+To compile and deploy for production:
+
+  # 1. Build frontend client assets
+  npm run build
+
+  # 2. Run full-stack production server
+  npm start
+
+The server serves the compiled UI while maintaining live telemetry, dynamic form
+engine, and automated email alerts to Triple C SOC.
+================================================================================

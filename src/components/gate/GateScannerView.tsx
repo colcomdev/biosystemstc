@@ -7,7 +7,7 @@
  * Strictly NO simulation buttons, demo controls, or access to administrative dashboards, settings, or cross-visitor logs.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield,
   Truck,
@@ -29,6 +29,7 @@ import {
   FileText,
   User,
   Building,
+  ChevronDown,
 } from 'lucide-react';
 import {
   AccessDecisionResponse,
@@ -92,6 +93,9 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
   const [lookupQuery, setLookupQuery] = useState('');
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupFeedback, setLookupFeedback] = useState<{ message: string; isSuccess: boolean } | null>(null);
+  const [suggestions, setSuggestions] = useState<RegisteredVisitor[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const lookupDropdownRef = useRef<HTMLDivElement>(null);
 
   // Network & Offline Status
   const [isOfflineMode, setIsOfflineMode] = useState(!navigator.onLine);
@@ -119,6 +123,43 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (lookupDropdownRef.current && !lookupDropdownRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // As user types in the box, automatically fetch similar users and list them
+  useEffect(() => {
+    const query = lookupQuery.trim();
+    if (!query || query.length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/visitors/lookup?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const matches: RegisteredVisitor[] = data.matches || (data.visitor ? [data.visitor] : []);
+          setSuggestions(matches);
+          setShowSuggestions(matches.length > 0);
+        }
+      } catch {
+        // Silent catch for background suggestion fetching
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [lookupQuery]);
 
   useEffect(() => {
     if (propLogoUrl !== undefined) {
@@ -169,11 +210,23 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
     }
   };
 
+  // Selection & Auto-Fill Handler
+  const handleSelectVisitor = (visitor: RegisteredVisitor) => {
+    applyVisitorToForm(visitor);
+    setLookupQuery(visitor.fullName);
+    setShowSuggestions(false);
+    setLookupFeedback({
+      message: `Pre-registered visitor verified & auto-filled: ${visitor.fullName} (${visitor.company})`,
+      isSuccess: true,
+    });
+  };
+
   // Smart Lookup Trigger
   const handleSmartLookup = async (query = lookupQuery) => {
     if (!query.trim()) return;
     setIsLookingUp(true);
     setLookupFeedback(null);
+    setShowSuggestions(false);
 
     try {
       const res = await fetch(`/api/visitors/lookup?q=${encodeURIComponent(query)}`);
@@ -182,7 +235,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
         if (data.found && data.visitor) {
           applyVisitorToForm(data.visitor);
           setLookupFeedback({
-            message: `Pre-registered visitor verified: ${data.visitor.fullName} (${data.visitor.company})`,
+            message: `Pre-registered visitor verified & auto-filled: ${data.visitor.fullName} (${data.visitor.company})`,
             isSuccess: true,
           });
         } else {
@@ -467,52 +520,152 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
         </div>
 
         {/* Pre-Approved Visitor Lookup Bar */}
-        <div className="mt-4 pt-3 border-t border-slate-800 space-y-2">
+        <div ref={lookupDropdownRef} className="mt-4 pt-3 border-t border-slate-800 space-y-2 relative">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <Search className="w-3.5 h-3.5 text-emerald-400" />
               Pre-Approved Visitor Lookup:
             </span>
-            <span className="text-[10px] text-slate-500">Search by contact, National ID, or Passport</span>
+            <span className="text-[10px] text-slate-500">Live search by Name, Phone, National ID or Passport</span>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 relative">
             <div className="relative flex-1">
               <input
                 type="text"
                 value={lookupQuery}
-                onChange={(e) => setLookupQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSmartLookup()}
-                placeholder="Enter Phone / National ID / Passport..."
-                className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs outline-none focus:border-emerald-500 font-mono placeholder:font-sans placeholder:text-slate-500"
+                onChange={(e) => {
+                  setLookupQuery(e.target.value);
+                  if (!showSuggestions && e.target.value.trim().length >= 2) {
+                    setShowSuggestions(true);
+                  }
+                }}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestions(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (suggestions.length > 0 && showSuggestions) {
+                      handleSelectVisitor(suggestions[0]);
+                    } else {
+                      handleSmartLookup();
+                    }
+                  } else if (e.key === 'Escape') {
+                    setShowSuggestions(false);
+                  }
+                }}
+                placeholder="Type name, phone, or ID to find & auto-fill..."
+                className="w-full pl-9 pr-8 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-medium placeholder:font-sans placeholder:text-slate-500"
               />
-              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+              {lookupQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLookupQuery('');
+                    setSuggestions([]);
+                    setShowSuggestions(false);
+                  }}
+                  className="absolute right-2.5 top-2.5 p-0.5 text-slate-500 hover:text-white rounded"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             <button
               type="button"
               onClick={() => handleSmartLookup()}
               disabled={isLookingUp}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow shrink-0"
             >
               {isLookingUp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Lookup'}
             </button>
           </div>
 
+          {/* Similar Users Live Suggestions Dropdown */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-slate-900 border border-emerald-500/50 rounded-xl shadow-2xl overflow-hidden backdrop-blur-md">
+              <div className="px-3 py-1.5 bg-slate-950/80 border-b border-slate-800 text-[10px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center justify-between">
+                <span>Similar Registered Visitors ({suggestions.length})</span>
+                <span className="text-slate-500 lowercase font-normal">Click to auto-fill form</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto divide-y divide-slate-800/60">
+                {suggestions.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => handleSelectVisitor(v)}
+                    className="w-full text-left px-3.5 py-2.5 hover:bg-emerald-950/40 transition flex items-center justify-between gap-3 group"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {v.photoUrl ? (
+                        <img
+                          src={v.photoUrl}
+                          alt={v.fullName}
+                          className="w-8 h-8 rounded-full object-cover border border-slate-700 group-hover:border-emerald-500 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 group-hover:bg-emerald-900/50 group-hover:text-emerald-300 shrink-0">
+                          <User className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white group-hover:text-emerald-300 truncate flex items-center gap-1.5">
+                          <span>{v.fullName}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 bg-slate-800 text-slate-400 rounded group-hover:bg-emerald-900/40 group-hover:text-emerald-300">
+                            {v.category}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate flex items-center gap-2 mt-0.5">
+                          <span className="flex items-center gap-1">
+                            <CreditCard className="w-3 h-3 text-slate-500" />
+                            {v.idType === 'PASSPORT' ? 'Passport' : 'ID'}: {v.idNumber}
+                          </span>
+                          <span className="text-slate-600">•</span>
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-slate-500" />
+                            {v.phoneNumber}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                          {v.company} ({v.countryOfOrigin || 'Zimbabwe'})
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-700/60 px-2 py-1 rounded-md shrink-0 group-hover:bg-emerald-500 group-hover:text-slate-950 transition">
+                      Auto-Fill ↵
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {lookupFeedback && (
             <div
-              className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+              className={`p-2.5 rounded-lg text-xs flex items-center justify-between gap-1.5 ${
                 lookupFeedback.isSuccess
                   ? 'bg-emerald-950/80 border border-emerald-700 text-emerald-300'
                   : 'bg-amber-950/80 border border-amber-700 text-amber-300'
               }`}
             >
-              {lookupFeedback.isSuccess ? (
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              ) : (
-                <AlertOctagon className="w-3.5 h-3.5 shrink-0" />
-              )}
-              <span>{lookupFeedback.message}</span>
+              <div className="flex items-center gap-2">
+                {lookupFeedback.isSuccess ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                ) : (
+                  <AlertOctagon className="w-4 h-4 shrink-0 text-amber-400" />
+                )}
+                <span>{lookupFeedback.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLookupFeedback(null)}
+                className="text-slate-400 hover:text-white p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
         </div>
@@ -709,13 +862,13 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
           </div>
         </div>
 
-        {/* SECTION 2: DYNAMIC BIOSECURITY DECLARATION */}
+        {/* SECTION 2: DECLARATION */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-emerald-400" />
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                2. African Swine Fever &amp; FMD Biosecurity Declaration
+                DECLARATION
               </h2>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400">

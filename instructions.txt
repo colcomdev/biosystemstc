@@ -1,119 +1,92 @@
 ================================================================================
-INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+INNSCOR AFRICA LTD (Colcom Foods) T/A TRIPLE C PIGS
 MOBILE VISITOR MANAGEMENT & BIOSECURITY GATE ACCESS DECISION SYSTEM
-PRODUCTION-READY LOCAL SETUP & BUILD GUIDE (NO DOCKER REQUIRED)
+PRODUCTION-READY SETUP & AUTOMATED DATABASE GUIDE (NO DOCKER REQUIRED)
 ================================================================================
 
 1. SYSTEM PREREQUISITES
 --------------------------------------------------------------------------------
 - Node.js: v18.x or v20.x LTS installed (https://nodejs.org)
 - npm: v9.x or higher
-- PostgreSQL: v14+ or v16+ running locally or accessible remotely
-- Postman or curl (optional, for backend API testing)
+- PostgreSQL: v14+ or v16+ (running locally or accessible on your network)
 
-2. POSTGRESQL DATABASE INITIALIZATION
+2. SIMPLE CONFIGURATION (.env)
 --------------------------------------------------------------------------------
-Ensure your local PostgreSQL instance is running:
-  sudo systemctl start postgresql # Linux (or start via Services on Windows / brew on macOS)
+The project features automatic zero-touch database provisioning. You do NOT
+need to run manual psql commands or manual database creation scripts.
 
-Connect to PostgreSQL and create the database:
-  psql -U postgres -c "CREATE DATABASE colcom_biosecurity_db;"
+Simply specify your PostgreSQL server credentials and desired database name in 
+the root `.env` file:
 
-Create a dedicated database user with password:
-  psql -U postgres -c "CREATE USER colcom_admin WITH PASSWORD 'colcom_secure_password_2026';"
-  psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE colcom_biosecurity_db TO colcom_admin;"
+  # Server Port
+  PORT=3000
 
-Set your DATABASE_URL environment variable in your server configuration or server/.env:
-  DATABASE_URL="postgresql://colcom_admin:colcom_secure_password_2026@localhost:5432/colcom_biosecurity_db?schema=public"
+  # PostgreSQL Server Credentials
+  DB_HOST=localhost
+  DB_PORT=5432
+  DB_USER=postgres
+  DB_PASSWORD=your_postgres_password
+  DB_NAME=colcom_biosecurity_db
 
-3. PROJECT STRUCTURE
---------------------------------------------------------------------------------
-The application is organized into full-stack production surfaces:
-  ├── instructions.txt                  # This setup and deployment guide
-  ├── server/                           # Express.js REST API Backend
-  │   ├── package.json                  # Server dependencies & scripts
-  │   ├── tsconfig.json                 # Server TypeScript configuration
-  │   ├── prisma/
-  │   │   └── schema.prisma             # Production PostgreSQL schema
-  │   └── src/
-  │       └── index.ts                  # Express API, Multer, Nodemailer, PDFKit
-  ├── client/                           # React + Tailwind CSS Mobile & Admin
-  │   ├── package.json                  # Client dependencies & scripts
-  │   └── src/
-  │       └── components/
-  │           ├── MobileScannerForm.tsx # Gate Mobile Scanner with Light/Dark & Logo
-  │           └── AdminDashboard.tsx    # Admin Dashboard with Form Builder & Logo Upload
-  └── uploads/                          # Stored company logo images
+  # (Alternatively, you can provide a standard DATABASE_URL connection string):
+  # DATABASE_URL=postgresql://postgres:your_postgres_password@localhost:5432/colcom_biosecurity_db
 
-4. STEP-BY-STEP LOCAL DEVELOPMENT SETUP
---------------------------------------------------------------------------------
-
-STEP 4.1: INSTALL & MIGRATE BACKEND (server/)
-  cd server
-  npm install
-  npx prisma generate
-  npx prisma db push
-
-STEP 4.2: RUN BACKEND DEVELOPMENT SERVER
-  npm run dev
-  # Server will start on http://localhost:5000 (or port configured in .env)
-
-STEP 4.3: INSTALL & RUN FRONTEND CLIENT (client/)
-  In a new terminal window:
-  cd client
-  npm install
-  npm run dev
-  # Frontend will start on http://localhost:3000
-
-Alternatively, run in the integrated full-stack single-port mode from workspace root:
-  npm install
-  npm run dev
-  # Integrated applet boots on http://localhost:3000 with Express + Vite middleware
-
-5. PRODUCTION BUILD & DEPLOYMENT WITHOUT DOCKER
---------------------------------------------------------------------------------
-
-STEP 5.1: BUILD CLIENT ASSETS
-  cd client
-  npm run build
-  # Generates optimized static HTML/JS/CSS assets in client/dist/
-
-STEP 5.2: COMPILE SERVER TYPESCRIPT
-  cd ../server
-  npm run build
-  # Compiles TypeScript into server/dist/
-
-STEP 5.3: LAUNCH IN PRODUCTION MODE
-  cd ../server
-  export NODE_ENV=production
-  export PORT=5000
-  node dist/index.js
-  # Serves the compiled REST API and static React frontend
-
-6. DEFAULT SECURITY CREDENTIALS & INITIAL CONFIGURATION
---------------------------------------------------------------------------------
-- Admin Dashboard URL: http://localhost:3000/#admin (or switch view via UI header)
-- Default Username: admin
-- Default Password: admin
-- Toggleable Email MFA: Disabled by default for direct initial login. Can be enabled
-  in the Admin Settings tab to enforce 6-digit OTP verification.
-- Dynamic Logo: Upload your corporate PNG/JPEG logo in Admin Dashboard -> Settings.
-  The logo automatically propagates to the Gate Mobile Scanner, the Admin Header,
-  and outbound EOD PDF reports.
-- Theme Toggle: Click the Sun/Moon icon in the top header to toggle between
-  Light Mode and Dark Mode. The selection persists in localStorage.
-
-7. AUTOMATED EMAIL ALERT & PDF REPORT CONFIGURATION
---------------------------------------------------------------------------------
-Configure your corporate SMTP credentials in server/.env or via Admin Dashboard:
-  SMTP_HOST="smtp.colcom.co.zw"
+  # Corporate Email Alerts (Triple C SOC)
+  SMTP_HOST=smtp.triplecpigs.co.zw
   SMTP_PORT=587
-  SMTP_USER="security@colcom.co.zw"
-  SMTP_PASS="your_smtp_password"
-  EMAIL_FROM="no-reply.security@colcom.co.zw"
+  SMTP_USER=soc@triplecpigs.co.zw
+  SMTP_PASS=your_email_password
+  EMAIL_FROM=no-reply.soc@triplecpigs.co.zw
 
-- Entry Denial Alerts: Fired in real-time to configured security emails when an entry
-  triggers African Swine Fever / Foot-and-Mouth Disease biosecurity quarantine rules.
-- EOD PDF Report: Automatically compiled at scheduled time (e.g., 18:00) with
-  embedded corporate logo, daily metrics, and denial audit breakdowns.
+3. STARTING THE APPLICATION (AUTOMATIC DB & TABLE CREATION)
+--------------------------------------------------------------------------------
+From the project root folder, simply run:
+
+  npm install
+  npm run dev
+
+WHAT HAPPENS ON STARTUP:
+1. The application automatically connects to your PostgreSQL server using the
+   credentials specified in .env.
+2. It checks if the database (e.g. colcom_biosecurity_db) exists. If not, it
+   automatically creates it (CREATE DATABASE colcom_biosecurity_db).
+3. It connects to the database and automatically creates all required tables
+   if they do not exist:
+     - system_users (Admin account)
+     - system_settings (Theme, branding, thresholds)
+     - email_config (Triple C SOC alert recipients, schedule)
+     - form_questions (Dynamic biosecurity question engine)
+     - visitors (Master pre-approved visitors registry)
+     - visits (Access decision records & visitor audit logs)
+     - biosecurity_alerts (Quarantine hold incidents)
+     - email_dispatch_logs (Outbound notification audit logs)
+4. It seeds baseline data (default admin, baseline questions, baseline visitors).
+5. The full-stack applet starts immediately on http://localhost:3000.
+
+4. USER INTERFACES & CREDENTIALS
+--------------------------------------------------------------------------------
+- Handheld Gate Mobile Surface:
+  http://localhost:3000
+  Optimized for handheld Android/iOS gate tablets & barcode/QR scanners.
+  Strictly isolated for gate security operators (no administrative controls).
+
+- Administrative Dashboard Surface:
+  http://localhost:3000 (Click "Security Admin Portal" or navigate to /#admin)
+  Default Username: admin
+  Default Password: admin
+  * Note: Email MFA is disabled by default for seamless direct login. You can
+    enable it at any time in Dashboard -> Settings.
+
+5. PRODUCTION BUILD (NO DOCKER)
+--------------------------------------------------------------------------------
+To compile and deploy for production:
+
+  # 1. Build frontend client assets
+  npm run build
+
+  # 2. Run full-stack production server
+  npm start
+
+The server serves the compiled UI while maintaining live telemetry, dynamic form
+engine, and automated email alerts to Triple C SOC.
 ================================================================================

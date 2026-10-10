@@ -8,7 +8,11 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
+
+dotenv.config();
+
 import {
   AccessDecisionResponse,
   BiosecurityAlert,
@@ -28,6 +32,17 @@ import {
 import { POSTGRES_SQL_SCHEMA, PRISMA_SCHEMA } from './src/lib/db-schema-definitions';
 import { generateEodPdfReport } from './src/lib/pdf-report-generator';
 import { sendDenialEmailAlert, sendEodReportEmail, emailDispatchLogs } from './src/lib/email-service';
+import {
+  initDatabase,
+  isDbConnected,
+  fetchQuestionsFromDb,
+  saveQuestionToDb,
+  deleteQuestionFromDb,
+  fetchVisitorsFromDb,
+  saveVisitorToDb,
+  saveVisitLogToDb,
+  saveAlertToDb,
+} from './src/lib/db';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -199,6 +214,51 @@ let registeredVisitors: RegisteredVisitor[] = [
     registeredAt: new Date(Date.now() - 86400000 * 60).toISOString(),
     lastVisitAt: new Date(Date.now() - 86400000 * 1).toISOString(),
   },
+  {
+    id: 'vis_004',
+    fullName: 'Farai Moyo',
+    idType: 'NATIONAL_ID',
+    idNumber: '63-108274-P-44',
+    countryOfOrigin: 'Zimbabwe',
+    phoneNumber: '263772199401',
+    company: 'Colcom Distribution Hub',
+    category: 'CONTRACTOR',
+    isPreApproved: true,
+    photoUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=300&auto=format&fit=crop&q=80',
+    embeddingVector: generateSyntheticEmbedding('farai_moyo_colcom'),
+    registeredAt: new Date(Date.now() - 86400000 * 15).toISOString(),
+    lastVisitAt: new Date(Date.now() - 86400000 * 4).toISOString(),
+  },
+  {
+    id: 'vis_005',
+    fullName: 'Tatenda Chidzero',
+    idType: 'NATIONAL_ID',
+    idNumber: '29-450912-L-19',
+    countryOfOrigin: 'Zimbabwe',
+    phoneNumber: '263774889210',
+    company: 'Chidzero Veterinary Services',
+    category: 'VET_INSPECTOR',
+    isPreApproved: true,
+    photoUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=300&auto=format&fit=crop&q=80',
+    embeddingVector: generateSyntheticEmbedding('tatenda_chidzero_vet'),
+    registeredAt: new Date(Date.now() - 86400000 * 20).toISOString(),
+    lastVisitAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+  },
+  {
+    id: 'vis_006',
+    fullName: 'Sarah Van Der Merwe',
+    idType: 'PASSPORT',
+    idNumber: 'A08923411',
+    countryOfOrigin: 'South Africa',
+    phoneNumber: '27821992033',
+    company: 'Pork Quality & Cold Chain Audits',
+    category: 'OFFICIAL_AUDITOR',
+    isPreApproved: true,
+    photoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80',
+    embeddingVector: generateSyntheticEmbedding('sarah_van_der_merwe'),
+    registeredAt: new Date(Date.now() - 86400000 * 40).toISOString(),
+    lastVisitAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+  },
 ];
 
 let visitorLogs: GateLogRecord[] = [
@@ -278,6 +338,24 @@ function broadcastSSE(eventType: string, data: unknown) {
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+
+  // Auto-initialize PostgreSQL database and tables using credentials in .env
+  try {
+    const dbSuccess = await initDatabase(dynamicQuestions, registeredVisitors, systemSettings, emailConfig);
+    if (dbSuccess) {
+      const persistedQuestions = await fetchQuestionsFromDb();
+      if (persistedQuestions && persistedQuestions.length > 0) {
+        dynamicQuestions = persistedQuestions;
+      }
+      const persistedVisitors = await fetchVisitorsFromDb();
+      if (persistedVisitors && persistedVisitors.length > 0) {
+        registeredVisitors = persistedVisitors;
+      }
+      console.log(`[DB] Successfully loaded dynamic questions (${dynamicQuestions.length}) and visitors (${registeredVisitors.length}) from PostgreSQL.`);
+    }
+  } catch (err) {
+    console.warn('[DB] Auto-init encountered error:', (err as Error).message);
+  }
 
   app.use(express.json({ limit: '15mb' }));
   app.use('/uploads', express.static(UPLOAD_DIR));
@@ -505,6 +583,9 @@ async function startServer() {
     };
 
     dynamicQuestions.push(newQuestion);
+    if (isDbConnected()) {
+      saveQuestionToDb(newQuestion).catch((err) => console.error('[DB] Error saving question:', err));
+    }
     broadcastSSE('form_questions_updated', { action: 'CREATED', questionId: newQuestion.id });
     return res.status(201).json(newQuestion);
   });
@@ -520,6 +601,10 @@ async function startServer() {
       ...req.body,
     };
 
+    if (isDbConnected()) {
+      saveQuestionToDb(dynamicQuestions[qIndex]).catch((err) => console.error('[DB] Error updating question:', err));
+    }
+
     broadcastSSE('form_questions_updated', { action: 'UPDATED', questionId: req.params.id });
     return res.json(dynamicQuestions[qIndex]);
   });
@@ -534,6 +619,9 @@ async function startServer() {
     }
 
     dynamicQuestions = dynamicQuestions.filter((q) => q.id !== req.params.id);
+    if (isDbConnected()) {
+      deleteQuestionFromDb(req.params.id).catch((err) => console.error('[DB] Error deleting question:', err));
+    }
     broadcastSSE('form_questions_updated', { action: 'DELETED', questionId: req.params.id });
     return res.json({ success: true });
   });
@@ -547,29 +635,46 @@ async function startServer() {
           q.order = idx + 1;
         }
       });
+      if (isDbConnected()) {
+        dynamicQuestions.forEach((q) => saveQuestionToDb(q).catch(console.error));
+      }
       broadcastSSE('form_questions_updated', { action: 'REORDERED' });
     }
     return res.json({ success: true, questions: dynamicQuestions });
   });
 
-  // Smart Visitor Lookup
+  // Smart Visitor Lookup (exact or fuzzy list of matches)
   app.get('/api/visitors/lookup', (req: Request, res: Response) => {
-    const q = ((req.query.q as string) || '').trim().toLowerCase();
+    const rawQ = (req.query.q as string) || '';
+    const q = rawQ.trim().toLowerCase();
     if (!q) {
-      return res.json({ found: false });
+      return res.json({ found: false, matches: [] });
     }
 
-    const match = registeredVisitors.find(
-      (v) =>
-        v.phoneNumber.replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
-        v.idNumber.toLowerCase() === q ||
-        v.fullName.toLowerCase().includes(q)
-    );
+    const cleanNum = q.replace(/\D/g, '');
 
-    if (match) {
-      return res.json({ found: true, visitor: match });
+    const matches = registeredVisitors.filter((v) => {
+      const vPhoneClean = v.phoneNumber.replace(/\D/g, '');
+      const vIdClean = v.idNumber.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const qClean = q.replace(/[^a-z0-9]/g, '');
+
+      const matchName = v.fullName.toLowerCase().includes(q);
+      const matchPhone = cleanNum.length >= 3 && vPhoneClean.includes(cleanNum);
+      const matchId = v.idNumber.toLowerCase().includes(q) || (qClean.length >= 3 && vIdClean.includes(qClean));
+      const matchCompany = v.company.toLowerCase().includes(q);
+
+      return matchName || matchPhone || matchId || matchCompany;
+    });
+
+    if (matches.length > 0) {
+      return res.json({
+        found: true,
+        visitor: matches[0],
+        matches,
+      });
     }
-    return res.json({ found: false });
+
+    return res.json({ found: false, matches: [] });
   });
 
   app.get('/api/visitors', (req: Request, res: Response) => {
@@ -609,6 +714,9 @@ async function startServer() {
     };
 
     registeredVisitors.unshift(newVisitor);
+    if (isDbConnected()) {
+      saveVisitorToDb(newVisitor).catch((err) => console.error('[DB] Error saving visitor:', err));
+    }
     return res.status(201).json(newVisitor);
   });
 
@@ -786,6 +894,10 @@ async function startServer() {
         syncedFromOffline: payload.isOfflineSubmission,
       });
 
+      if (isDbConnected()) {
+        saveVisitLogToDb(visitorLogs[0]).catch((err) => console.error('[DB] Log save error:', err));
+      }
+
       broadcastSSE('telemetry_update', {
         action: 'VISITOR_CHECKED_IN',
         activeOccupants: activeOccupantsCount,
@@ -879,6 +991,11 @@ async function startServer() {
 
       biosecurityAlerts.unshift(newAlert);
 
+      if (isDbConnected()) {
+        saveVisitLogToDb(visitorLogs[0]).catch((err) => console.error('[DB] Log save error:', err));
+        saveAlertToDb(newAlert).catch((err) => console.error('[DB] Alert save error:', err));
+      }
+
       broadcastSSE('biosecurity_alert', {
         alert: newAlert,
         decision: decisionResponse,
@@ -918,6 +1035,9 @@ async function startServer() {
     const alert = biosecurityAlerts.find((a) => a.id === req.params.id);
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
     alert.status = 'INVESTIGATING';
+    if (isDbConnected()) {
+      saveAlertToDb(alert).catch((err) => console.error('[DB] Error updating alert:', err));
+    }
     broadcastSSE('alert_status_changed', { alertId: alert.id, status: 'INVESTIGATING' });
     return res.json(alert);
   });
@@ -926,6 +1046,9 @@ async function startServer() {
     const alert = biosecurityAlerts.find((a) => a.id === req.params.id);
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
     alert.status = 'RESOLVED';
+    if (isDbConnected()) {
+      saveAlertToDb(alert).catch((err) => console.error('[DB] Error updating alert:', err));
+    }
     broadcastSSE('alert_status_changed', { alertId: alert.id, status: 'RESOLVED' });
     return res.json(alert);
   });
