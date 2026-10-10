@@ -46,6 +46,7 @@ import { PostgresArchitectureModal } from './PostgresArchitectureModal';
 import { PreRegisterModal } from './PreRegisterModal';
 import { DynamicQuestionBuilder } from './DynamicQuestionBuilder';
 import { SystemSettingsView } from './SystemSettingsView';
+import { ReportEmailConfigView } from './ReportEmailConfigView';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -71,7 +72,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [debugOtp, setDebugOtp] = useState<string | null>(null);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'alerts' | 'builder' | 'logs' | 'whitelist' | 'settings'>('alerts');
+  const [activeTab, setActiveTab] = useState<'alerts' | 'builder' | 'logs' | 'whitelist' | 'email_reports' | 'settings'>('alerts');
 
   // Live Data State
   const [telemetry, setTelemetry] = useState<TelemetryStats>({
@@ -596,6 +597,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
+            onClick={() => setActiveTab('email_reports')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              activeTab === 'email_reports'
+                ? 'bg-cyan-600 text-white shadow'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Mail className="w-4 h-4" />
+            Email &amp; PDF Reports
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('settings')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
               activeTab === 'settings'
@@ -956,7 +970,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 5: System Settings & Toggleable MFA */}
+      {/* TAB 5: Email Alerts & EOD PDF Reports */}
+      {activeTab === 'email_reports' && <ReportEmailConfigView />}
+
+      {/* TAB 6: System Settings & Toggleable MFA */}
       {activeTab === 'settings' && <SystemSettingsView />}
 
       {/* Modals */}

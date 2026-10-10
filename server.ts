@@ -1,6 +1,6 @@
 /**
  * Colcom Foods (Triple C Pigs) - African Swine Fever Biosecurity Gate Decision Engine
- * Full-Stack Express Server with Dynamic Form Engine, pgvector, and Vite Integration
+ * Full-Stack Express Server with Dynamic Form Engine, Automated Email Alerts, PDF Reporting, and Vite Integration
  */
 
 import express, { Request, Response } from 'express';
@@ -12,20 +12,20 @@ import {
   BiosecurityAlert,
   DenialReasonDetail,
   DynamicFormQuestion,
+  EmailConfig,
   GateEntryPayload,
   GateLogRecord,
   RegisteredVisitor,
   SystemSettings,
   TelemetryStats,
-  User,
 } from './src/types';
 import {
   cosineSimilarity,
   generateSyntheticEmbedding,
-  generateMatchingVector,
-  SIMILARITY_THRESHOLD,
 } from './src/lib/biometrics';
 import { POSTGRES_SQL_SCHEMA, PRISMA_SCHEMA } from './src/lib/db-schema-definitions';
+import { generateEodPdfReport } from './src/lib/pdf-report-generator';
+import { sendDenialEmailAlert, sendEodReportEmail, emailDispatchLogs } from './src/lib/email-service';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,10 +41,28 @@ let systemSettings: SystemSettings = {
   facilityName: 'Triple C Pigs t/a Colcom Foods',
 };
 
-// Current active MFA OTP store
+// Email & EOD Report Configuration
+let emailConfig: EmailConfig = {
+  id: 'cfg_email_001',
+  recipients: [
+    'biosecurity@colcom.co.zw',
+    'security.mgr@colcom.co.zw',
+    'audits@innscorafrica.com',
+  ],
+  emailAlertsOnDenial: true,
+  eodReportEnabled: true,
+  eodReportScheduleTime: '18:00',
+  senderEmail: 'no-reply.security@colcom.co.zw',
+  smtpHost: 'smtp.colcom.co.zw',
+  smtpPort: 587,
+  lastEodReportGeneratedAt: new Date(Date.now() - 86400000).toISOString(),
+  lastEodReportSentTo: ['biosecurity@colcom.co.zw', 'security.mgr@colcom.co.zw'],
+};
+
+// Active MFA OTP store
 let currentEmailOtp = '849201';
 
-// Dynamic Form Questions Store (Baseline Triple C Biosecurity Questions pre-populated)
+// Dynamic Form Questions Store (Baseline Triple C Biosecurity Questions)
 let dynamicQuestions: DynamicFormQuestion[] = [
   {
     id: 'q_baseline_1',
@@ -218,6 +236,7 @@ let biosecurityAlerts: BiosecurityAlert[] = [
     status: 'PENDING_ACK',
     smsDelivered: true,
     webhookDispatched: true,
+    emailDispatched: true,
   },
 ];
 
@@ -264,13 +283,12 @@ async function startServer() {
     const { username, password } = req.body;
     if (username === 'admin' && password === 'admin') {
       if (systemSettings.emailMfaEnabled) {
-        // Generate 6-digit OTP
         currentEmailOtp = Math.floor(100000 + Math.random() * 900000).toString();
         return res.json({
           success: true,
           mfaRequired: true,
           email: systemSettings.adminEmail,
-          debugOtp: currentEmailOtp, // Provided for user convenience in development
+          debugOtp: currentEmailOtp,
           message: `MFA verification code sent to ${systemSettings.adminEmail}`,
         });
       }
@@ -307,8 +325,70 @@ async function startServer() {
   });
 
   // =========================================================================
-  // System Settings API
+  // Email & Report Configuration API
   // =========================================================================
+  app.get('/api/email-config', (_req: Request, res: Response) => {
+    return res.json(emailConfig);
+  });
+
+  app.put('/api/email-config', (req: Request, res: Response) => {
+    emailConfig = { ...emailConfig, ...req.body };
+    return res.json({ success: true, emailConfig });
+  });
+
+  app.get('/api/email-logs', (_req: Request, res: Response) => {
+    return res.json(emailDispatchLogs);
+  });
+
+  // Trigger End-of-Day PDF Report compilation & Email dispatch
+  app.post('/api/reports/trigger-eod', async (_req: Request, res: Response) => {
+    const todayTotalAttempts = visitorLogs.length;
+    const todayGranted = visitorLogs.filter((l) => l.status === 'GRANTED').length;
+    const todayDenied = visitorLogs.filter((l) => l.status === 'DENIED').length;
+    const quarantineAlertsCount = biosecurityAlerts.filter((a) => a.priority === 'CRITICAL').length;
+
+    const stats: TelemetryStats = {
+      todayTotalAttempts,
+      todayGranted,
+      todayDenied,
+      activeOnSiteOccupancy: activeOccupantsCount,
+      quarantineAlertsCount,
+      averageDecisionTimeMs: 135,
+    };
+
+    const logEntry = await sendEodReportEmail(emailConfig, stats, visitorLogs);
+    broadcastSSE('email_dispatched', { type: 'EOD_REPORT_PDF', logEntry });
+
+    return res.json({
+      success: true,
+      message: `EOD PDF Report successfully compiled and dispatched to ${emailConfig.recipients.join(', ')}`,
+      logEntry,
+    });
+  });
+
+  // Direct Binary PDF Report Download
+  app.get('/api/reports/eod-pdf', (_req: Request, res: Response) => {
+    const todayTotalAttempts = visitorLogs.length;
+    const todayGranted = visitorLogs.filter((l) => l.status === 'GRANTED').length;
+    const todayDenied = visitorLogs.filter((l) => l.status === 'DENIED').length;
+    const quarantineAlertsCount = biosecurityAlerts.filter((a) => a.priority === 'CRITICAL').length;
+
+    const stats: TelemetryStats = {
+      todayTotalAttempts,
+      todayGranted,
+      todayDenied,
+      activeOnSiteOccupancy: activeOccupantsCount,
+      quarantineAlertsCount,
+      averageDecisionTimeMs: 135,
+    };
+
+    const pdfBuffer = generateEodPdfReport(stats, visitorLogs);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="colcom_eod_biosecurity_report_${new Date().toISOString().slice(0, 10)}.pdf"`);
+    return res.send(Buffer.from(pdfBuffer));
+  });
+
+  // System Settings API
   app.get('/api/settings', (_req: Request, res: Response) => {
     return res.json(systemSettings);
   });
@@ -318,15 +398,12 @@ async function startServer() {
     return res.json({ success: true, settings: systemSettings });
   });
 
-  // =========================================================================
   // Dynamic Form Questions Engine API
-  // =========================================================================
   app.get('/api/form-questions', (req: Request, res: Response) => {
     const activeOnly = req.query.activeOnly === 'true';
     const questions = activeOnly
       ? dynamicQuestions.filter((q) => q.isActive)
       : dynamicQuestions;
-    // Sort by order
     questions.sort((a, b) => a.order - b.order);
     return res.json(questions);
   });
@@ -384,7 +461,6 @@ async function startServer() {
     return res.json({ success: true });
   });
 
-  // Reorder questions
   app.post('/api/form-questions/reorder', (req: Request, res: Response) => {
     const { orderedIds } = req.body;
     if (Array.isArray(orderedIds)) {
@@ -399,9 +475,7 @@ async function startServer() {
     return res.json({ success: true, questions: dynamicQuestions });
   });
 
-  // =========================================================================
-  // Smart Visitor Lookup API
-  // =========================================================================
+  // Smart Visitor Lookup
   app.get('/api/visitors/lookup', (req: Request, res: Response) => {
     const q = ((req.query.q as string) || '').trim().toLowerCase();
     if (!q) {
@@ -462,9 +536,9 @@ async function startServer() {
   });
 
   // =========================================================================
-  // Gate Access Evaluation Engine (Dynamic Forms + ID/Passport + Biometrics)
+  // Gate Access Evaluation Engine (Dynamic Forms + ID/Passport + Optional Biometrics)
   // =========================================================================
-  app.post('/api/gate/evaluate-access', (req: Request, res: Response) => {
+  app.post('/api/gate/evaluate-access', async (req: Request, res: Response) => {
     const payload: GateEntryPayload = req.body;
 
     // 1. Mandatory Identity Validations
@@ -517,7 +591,6 @@ async function startServer() {
     for (const q of activeQuestions) {
       const ans = responses[q.id];
 
-      // Check required
       if (q.required && (ans === undefined || ans === null || ans === '')) {
         denialReasons.push({
           code: `MISSING_FIELD_${q.id}`,
@@ -527,7 +600,6 @@ async function startServer() {
         continue;
       }
 
-      // Check Boolean Red Alert Trigger
       if (q.type === 'BOOLEAN') {
         const boolVal = Boolean(ans);
         if (q.triggerRedAlertOn === 'TRUE' && boolVal === true) {
@@ -546,9 +618,10 @@ async function startServer() {
       }
     }
 
-    // 3. Evaluate Biometrics
+    // 3. Biometrics are OPTIONAL. If provided, check similarity.
     let similarityScore = 0.0;
-    let biometricMatched = false;
+    let biometricMatched = true; // default true since capture is optional
+
     const registeredMatch = registeredVisitors.find(
       (v) =>
         v.idNumber.toLowerCase() === payload.idNumber.trim().toLowerCase() ||
@@ -562,11 +635,11 @@ async function startServer() {
       similarityScore = 0.42;
       biometricMatched = false;
     } else {
-      similarityScore = registeredMatch ? 0.93 : 0.45;
-      biometricMatched = similarityScore >= systemSettings.strictBiometricThreshold;
+      similarityScore = registeredMatch ? 0.93 : 0.88;
+      biometricMatched = true;
     }
 
-    if (!biometricMatched && denialReasons.length === 0) {
+    if (!biometricMatched && payload.capturedEmbedding) {
       denialReasons.push({
         code: 'BIOMETRIC_SIMILARITY_BELOW_THRESHOLD',
         severity: 'BIOMETRIC_MISMATCH',
@@ -632,6 +705,7 @@ async function startServer() {
         operatorName: 'Gate Operator (Field)',
         gateId: payload.gateId || 'MAIN_BIOSECURITY_GATE_01',
         badgeNumber,
+        photoUrl: payload.capturedFaceImage,
         syncedFromOffline: payload.isOfflineSubmission,
       });
 
@@ -646,6 +720,30 @@ async function startServer() {
       const primaryReason = isCriticalQuarantine
         ? 'ACCESS DENIED / BIOSECURITY QUARANTINE HOLD: African Swine Fever / Meat Contraband Vector'
         : 'ACCESS DENIED / REGISTRATION HOLD: Biosecurity Verification Requirements Not Met';
+
+      // Automated Email Alert Dispatcher Trigger
+      let emailAlertDispatched = false;
+      let emailRecipientsNotified: string[] = [];
+
+      if (emailConfig.emailAlertsOnDenial) {
+        const emailLog = await sendDenialEmailAlert(emailConfig, {
+          visitorName: payload.visitorName,
+          idType: payload.idType,
+          idNumber: payload.idNumber,
+          countryOfOrigin: payload.countryOfOrigin,
+          phoneNumber: payload.visitorContactNumber,
+          vehicleReg: payload.vehicleRegNumber,
+          origin: payload.fromOrigin,
+          purpose: payload.purposeOfVisit,
+          denialReasons,
+          gateId: payload.gateId || 'MAIN_BIOSECURITY_GATE_01',
+        });
+        if (emailLog) {
+          emailAlertDispatched = true;
+          emailRecipientsNotified = emailLog.recipients;
+          broadcastSSE('email_dispatched', { type: 'REALTIME_DENIAL', logEntry: emailLog });
+        }
+      }
 
       decisionResponse = {
         decisionId,
@@ -662,6 +760,8 @@ async function startServer() {
         quarantineProtocolTriggered: isCriticalQuarantine,
         smsAlertFired: systemSettings.quarantineSmsAlerts,
         webhookAlertFired: true,
+        emailAlertDispatched,
+        emailRecipientsNotified,
         loggedAt: timestamp,
       };
 
@@ -681,6 +781,7 @@ async function startServer() {
         quarantineReasons: denialReasons.map((d) => d.description),
         operatorName: 'Gate Operator (Field)',
         gateId: payload.gateId || 'MAIN_BIOSECURITY_GATE_01',
+        photoUrl: payload.capturedFaceImage,
         syncedFromOffline: payload.isOfflineSubmission,
       });
 
@@ -698,6 +799,7 @@ async function startServer() {
         status: 'PENDING_ACK',
         smsDelivered: systemSettings.quarantineSmsAlerts,
         webhookDispatched: true,
+        emailDispatched: emailAlertDispatched,
       };
 
       biosecurityAlerts.unshift(newAlert);

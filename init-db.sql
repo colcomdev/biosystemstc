@@ -210,3 +210,34 @@ CREATE TABLE IF NOT EXISTS biosecurity_alerts (
     webhook_dispatched BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Email & Automated PDF Report Configuration Table
+CREATE TABLE IF NOT EXISTS email_config (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    recipients JSONB NOT NULL DEFAULT '["biosecurity@colcom.co.zw", "security.mgr@colcom.co.zw", "audits@innscorafrica.com"]'::jsonb,
+    email_alerts_on_denial BOOLEAN NOT NULL DEFAULT true,
+    eod_report_enabled BOOLEAN NOT NULL DEFAULT true,
+    eod_report_schedule_time VARCHAR(10) NOT NULL DEFAULT '18:00',
+    sender_email VARCHAR(255) NOT NULL DEFAULT 'no-reply.security@colcom.co.zw',
+    smtp_host VARCHAR(255) NOT NULL DEFAULT 'smtp.colcom.co.zw',
+    smtp_port INT NOT NULL DEFAULT 587,
+    last_eod_report_generated_at TIMESTAMPTZ,
+    last_eod_report_sent_to JSONB,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO email_config (recipients, email_alerts_on_denial, eod_report_enabled)
+VALUES ('["biosecurity@colcom.co.zw", "security.mgr@colcom.co.zw", "audits@innscorafrica.com"]'::jsonb, true, true)
+ON CONFLICT DO NOTHING;
+
+-- Email Notification Logs Table
+CREATE TABLE IF NOT EXISTS email_dispatch_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    dispatch_type VARCHAR(50) NOT NULL,
+    recipients JSONB NOT NULL,
+    subject TEXT NOT NULL,
+    preview_text TEXT NOT NULL,
+    has_attachment BOOLEAN NOT NULL DEFAULT false,
+    delivery_status VARCHAR(50) NOT NULL DEFAULT 'DELIVERED',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

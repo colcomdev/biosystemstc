@@ -3,22 +3,21 @@
  * Colcom Foods (Triple C Pigs) - African Swine Fever Biosecurity Gate Control
  * 
  * Includes:
- * - pgvector extension for 512-dimensional facial biometric embeddings
- * - Normalized Dynamic Form Engine: form_templates, form_questions, visit_responses
- * - Visitors & Visits (Supporting National ID / Passport, Country of Origin)
- * - Biometrics storage with vector(512) and HNSW cosine distance indexing
- * - System Settings with toggleable Email MFA
+ * - Dynamic Form Engine: form_templates, form_questions, visit_responses
+ * - Visitors & Visits (Supporting National ID / Passport, Country of Origin, optional photo/biometrics)
+ * - System Settings & Email Config (real-time denial alert recipients, EOD PDF report schedules)
+ * - pgvector extension for facial vector embeddings
  */
 
 export const POSTGRES_SQL_SCHEMA = `-- ==============================================================================
 -- TRIPLE C PIGS t/a COLCOM FOODS (INNSCOR AFRICA GROUP)
--- Biometric Visitor Management & Biosecurity Gate Decision Engine Schema
--- PostgreSQL 16+ with pgvector extension & Dynamic Form Engine
+-- Biometric Visitor Management, Automated Email Alerts & EOD Report Schema
+-- PostgreSQL 16+ with Dynamic Form Engine & Email Configuration
 -- ==============================================================================
 
 -- 1. Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "vector"; -- pgvector for 128/512-dim face embeddings
+CREATE EXTENSION IF NOT EXISTS "vector";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 2. Enumerated Types
@@ -80,7 +79,7 @@ CREATE TABLE system_users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Global System Settings (Toggleable MFA, biosecurity hotline, threshold)
+-- 4. Global System Settings
 CREATE TABLE system_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email_mfa_enabled BOOLEAN NOT NULL DEFAULT false,
@@ -93,7 +92,22 @@ CREATE TABLE system_settings (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. Visitors Master Registry (National ID OR Passport Number, Country of Origin)
+-- 5. Email & Automated PDF Report Configuration Table
+CREATE TABLE email_config (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    recipients JSONB NOT NULL DEFAULT '["biosecurity@colcom.co.zw", "security.mgr@colcom.co.zw"]'::jsonb,
+    email_alerts_on_denial BOOLEAN NOT NULL DEFAULT true,
+    eod_report_enabled BOOLEAN NOT NULL DEFAULT true,
+    eod_report_schedule_time VARCHAR(10) NOT NULL DEFAULT '18:00',
+    sender_email VARCHAR(255) NOT NULL DEFAULT 'no-reply.security@colcom.co.zw',
+    smtp_host VARCHAR(255) NOT NULL DEFAULT 'smtp.colcom.co.zw',
+    smtp_port INT NOT NULL DEFAULT 587,
+    last_eod_report_generated_at TIMESTAMPTZ,
+    last_eod_report_sent_to JSONB,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. Visitors Master Registry (National ID OR Passport Number, Country of Origin)
 CREATE TABLE visitors (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name VARCHAR(150) NOT NULL,
@@ -114,7 +128,7 @@ CREATE INDEX idx_visitors_phone ON visitors(phone_number);
 CREATE INDEX idx_visitors_id_number ON visitors(id_number);
 CREATE INDEX idx_visitors_country ON visitors(country_of_origin);
 
--- 6. Dynamic Form Templates & Question Builder
+-- 7. Dynamic Form Templates & Question Builder
 CREATE TABLE form_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_name VARCHAR(150) NOT NULL,
@@ -129,20 +143,20 @@ CREATE TABLE form_questions (
     template_id UUID REFERENCES form_templates(id) ON DELETE CASCADE,
     prompt TEXT NOT NULL,
     type question_data_type NOT NULL DEFAULT 'BOOLEAN',
-    options JSONB, -- For SELECT questions: ["Option 1", "Option 2"]
+    options JSONB,
     required BOOLEAN NOT NULL DEFAULT true,
     sort_order INT NOT NULL DEFAULT 0,
     trigger_red_alert_on red_trigger_condition NOT NULL DEFAULT 'NONE',
     failure_message TEXT NOT NULL,
     category VARCHAR(50) NOT NULL DEFAULT 'BIOSECURITY',
     is_active BOOLEAN NOT NULL DEFAULT true,
-    is_baseline BOOLEAN NOT NULL DEFAULT false, -- Baseline African Swine Fever rules
+    is_baseline BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_form_questions_active ON form_questions(is_active, sort_order);
 
--- 7. Visits (Gate Evaluations & Decisions)
+-- 8. Visits (Gate Evaluations & Decisions)
 CREATE TABLE visits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     visitor_id UUID REFERENCES visitors(id) ON DELETE SET NULL,
@@ -158,9 +172,11 @@ CREATE TABLE visits (
     primary_reason TEXT NOT NULL,
     similarity_score NUMERIC(5, 4) NOT NULL DEFAULT 0.0000,
     badge_number VARCHAR(50),
+    captured_photo_url TEXT, -- Optional photo capture
     gate_id VARCHAR(50) NOT NULL DEFAULT 'MAIN_BIOSECURITY_GATE_01',
     operator_id UUID REFERENCES system_users(id),
     is_offline_synced BOOLEAN NOT NULL DEFAULT false,
+    email_alert_sent BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_phone_digits CHECK (length(phone_number) >= 10),
     CONSTRAINT chk_purpose_length CHECK (length(purpose_of_visit) <= 3500)
@@ -169,7 +185,7 @@ CREATE TABLE visits (
 CREATE INDEX idx_visits_created_at ON visits(created_at DESC);
 CREATE INDEX idx_visits_status ON visits(status);
 
--- 8. Visit Responses (Answers to Dynamic Form Questions)
+-- 9. Visit Responses (Answers to Dynamic Form Questions)
 CREATE TABLE visit_responses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     visit_id UUID NOT NULL REFERENCES visits(id) ON DELETE CASCADE,
@@ -182,48 +198,23 @@ CREATE TABLE visit_responses (
 );
 
 CREATE INDEX idx_visit_responses_visit_id ON visit_responses(visit_id);
-CREATE INDEX idx_visit_responses_alert ON visit_responses(triggered_red_alert);
 
--- 9. Biometrics Table (Storing 512-D Facial Vector Embeddings with pgvector)
-CREATE TABLE biometrics (
+-- 10. Email Notification Logs Table
+CREATE TABLE email_dispatch_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    visitor_id UUID REFERENCES visitors(id) ON DELETE CASCADE,
-    visit_id UUID REFERENCES visits(id) ON DELETE CASCADE,
-    -- 512-dimensional vector embedding for ArcFace / FaceNet representation
-    vector_embedding vector(512),
-    similarity_score NUMERIC(5, 4) NOT NULL DEFAULT 0.0000,
-    verification_passed BOOLEAN NOT NULL DEFAULT false,
-    captured_photo_url TEXT,
+    dispatch_type VARCHAR(50) NOT NULL, -- REALTIME_DENIAL, EOD_REPORT_PDF
+    recipients JSONB NOT NULL,
+    subject TEXT NOT NULL,
+    preview_text TEXT NOT NULL,
+    has_attachment BOOLEAN NOT NULL DEFAULT false,
+    delivery_status VARCHAR(50) NOT NULL DEFAULT 'DELIVERED',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
--- Index for instant sub-millisecond cosine distance facial search
-CREATE INDEX idx_biometrics_cosine 
-ON biometrics 
-USING hnsw (vector_embedding vector_cosine_ops)
-WITH (m = 16, ef_construction = 64);
-
--- 10. Biosecurity Alerts Table (Dispatched to Security & Vet Managers)
-CREATE TABLE biosecurity_alerts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    visit_id UUID NOT NULL REFERENCES visits(id) ON DELETE CASCADE,
-    visitor_name VARCHAR(150) NOT NULL,
-    phone_number VARCHAR(25) NOT NULL,
-    vehicle_reg VARCHAR(25),
-    priority alert_priority_level NOT NULL DEFAULT 'CRITICAL',
-    alert_status alert_lifecycle_status NOT NULL DEFAULT 'PENDING_ACK',
-    violation_reasons JSONB NOT NULL,
-    sms_dispatched BOOLEAN NOT NULL DEFAULT true,
-    webhook_dispatched BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_biosecurity_alerts_status ON biosecurity_alerts(alert_status);
 `;
 
 export const PRISMA_SCHEMA = `// ==============================================================================
 // Colcom Foods - Triple C Pigs Biosecurity Gate Decision Engine
-// Prisma ORM Schema with Dynamic Form Engine & pgvector support
+// Prisma ORM Schema with Dynamic Form Engine & Email Configuration
 // ==============================================================================
 
 datasource db {
@@ -267,19 +258,6 @@ enum RedTriggerCondition {
   NONE
 }
 
-enum AlertPriority {
-  MEDIUM
-  HIGH
-  CRITICAL
-}
-
-enum AlertStatus {
-  PENDING_ACK
-  INVESTIGATING
-  ESCALATED
-  RESOLVED
-}
-
 model SystemUser {
   id           String     @id @default(uuid())
   username     String     @unique
@@ -312,6 +290,22 @@ model SystemSettings {
   @@map("system_settings")
 }
 
+model EmailConfig {
+  id                    String    @id @default(uuid())
+  recipients            Json      // List of recipient email addresses
+  emailAlertsOnDenial   Boolean   @default(true) @map("email_alerts_on_denial")
+  eodReportEnabled      Boolean   @default(true) @map("eod_report_enabled")
+  eodReportScheduleTime String    @default("18:00") @map("eod_report_schedule_time")
+  senderEmail           String    @default("no-reply.security@colcom.co.zw") @map("sender_email")
+  smtpHost              String    @default("smtp.colcom.co.zw") @map("smtp_host")
+  smtpPort              Int       @default(587) @map("smtp_port")
+  lastEodGeneratedAt    DateTime? @map("last_eod_generated_at")
+  lastEodSentTo         Json?     @map("last_eod_sent_to")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@map("email_config")
+}
+
 model Visitor {
   id              String             @id @default(uuid())
   fullName        String             @map("full_name")
@@ -327,7 +321,6 @@ model Visitor {
   updatedAt       DateTime           @updatedAt @map("updated_at")
 
   visits          Visit[]
-  biometrics      Biometric[]
 
   @@unique([idType, idNumber], name: "uq_visitor_identity")
   @@index([phoneNumber])
@@ -387,15 +380,15 @@ model Visit {
   primaryReason    String             @map("primary_reason")
   similarityScore  Decimal            @default(0.0000) @db.Decimal(5, 4) @map("similarity_score")
   badgeNumber      String?            @map("badge_number")
+  capturedPhotoUrl String?            @map("captured_photo_url")
   gateId           String             @default("MAIN_BIOSECURITY_GATE_01") @map("gate_id")
   operatorId       String?            @map("operator_id")
   operator         SystemUser?        @relation(fields: [operatorId], references: [id])
   isOfflineSynced  Boolean            @default(false) @map("is_offline_synced")
+  emailAlertSent   Boolean            @default(false) @map("email_alert_sent")
   createdAt        DateTime           @default(now()) @map("created_at")
 
   responses        VisitResponse[]
-  biometrics       Biometric[]
-  alerts           BiosecurityAlert[]
 
   @@index([createdAt])
   @@index([status])
@@ -417,40 +410,5 @@ model VisitResponse {
   @@index([visitId])
   @@index([triggeredRedAlert])
   @@map("visit_responses")
-}
-
-model Biometric {
-  id                 String                      @id @default(uuid())
-  visitorId          String?                     @map("visitor_id")
-  visitor            Visitor?                    @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  visitId            String?                     @map("visit_id")
-  visit              Visit?                      @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  vectorEmbedding    Unsupported("vector(512)")? @map("vector_embedding")
-  similarityScore    Decimal                     @default(0.0000) @db.Decimal(5, 4) @map("similarity_score")
-  verificationPassed Boolean                     @default(false) @map("verification_passed")
-  capturedPhotoUrl   String?                     @map("captured_photo_url")
-  createdAt          DateTime                    @default(now()) @map("created_at")
-
-  @@map("biometrics")
-}
-
-model BiosecurityAlert {
-  id                 String        @id @default(uuid())
-  visitId            String        @map("visit_id")
-  visit              Visit         @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  visitorName        String        @map("visitor_name")
-  phoneNumber        String        @map("phone_number")
-  vehicleReg         String?       @map("vehicle_reg")
-  priority           AlertPriority @default(CRITICAL)
-  alertStatus        AlertStatus   @default(PENDING_ACK) @map("alert_status")
-  violationReasons   Json          @map("violation_reasons")
-  smsDispatched      Boolean       @default(true) @map("sms_dispatched")
-  webhookDispatched  Boolean       @default(true) @map("webhook_dispatched")
-  createdAt          DateTime      @default(now()) @map("created_at")
-
-  @@index([alertStatus])
-  @@index([priority])
-  @@index([createdAt])
-  @@map("biosecurity_alerts")
 }
 `;

@@ -1,6 +1,6 @@
 /**
  * Colcom Foods - Triple C Pigs Biometric Visitor Management System
- * Shared Types & Domain Models (Dynamic Forms, ID/Passport, pgvector, MFA)
+ * Shared Types & Domain Models (Dynamic Forms, ID/Passport, Email Alerts, PDF Reports)
  */
 
 export type Role = 'GATE_OPERATOR' | 'BIOSECURITY_OFFICER' | 'SECURITY_MANAGER' | 'AUDITOR';
@@ -32,7 +32,7 @@ export interface RegisteredVisitor {
   category: 'CONTRACTOR' | 'SUPPLIER' | 'OFFICIAL_AUDITOR' | 'CUSTOMER' | 'VET_INSPECTOR';
   isPreApproved: boolean;
   photoUrl: string;
-  embeddingVector?: number[]; // 512-dimensional vector
+  embeddingVector?: number[]; // 512-dimensional vector (Optional)
   registeredAt: string;
   lastVisitAt?: string;
 }
@@ -66,8 +66,8 @@ export interface GateEntryPayload {
   fromOrigin: string;           // Required, min length 3
   dynamicResponses: Record<string, boolean | string>;
   digitalSignature: string;      // Base64 PNG data URL or signature string
-  capturedFaceImage?: string;   // Base64 PNG data URL
-  capturedEmbedding?: number[]; // 512-dimensional vector
+  capturedFaceImage?: string;   // Optional photo
+  capturedEmbedding?: number[]; // Optional 512-dimensional vector
   gateId: string;
   operatorId: string;
   timestamp?: string;
@@ -102,6 +102,8 @@ export interface AccessDecisionResponse {
   quarantineProtocolTriggered?: boolean;
   smsAlertFired?: boolean;
   webhookAlertFired?: boolean;
+  emailAlertDispatched?: boolean;
+  emailRecipientsNotified?: string[];
   loggedAt: string;
 }
 
@@ -118,6 +120,7 @@ export interface BiosecurityAlert {
   status: 'PENDING_ACK' | 'INVESTIGATING' | 'ESCALATED' | 'RESOLVED';
   smsDelivered: boolean;
   webhookDispatched: boolean;
+  emailDispatched: boolean;
 }
 
 export interface GateLogRecord {
@@ -137,6 +140,7 @@ export interface GateLogRecord {
   operatorName: string;
   gateId: string;
   badgeNumber?: string;
+  photoUrl?: string;
   syncedFromOffline?: boolean;
 }
 
@@ -157,4 +161,28 @@ export interface SystemSettings {
   quarantineSmsAlerts: boolean;
   webhookEndpoint: string;
   facilityName: string;
+}
+
+export interface EmailConfig {
+  id: string;
+  recipients: string[];
+  emailAlertsOnDenial: boolean;
+  eodReportEnabled: boolean;
+  eodReportScheduleTime: string; // e.g. "18:00"
+  senderEmail: string;
+  smtpHost: string;
+  smtpPort: number;
+  lastEodReportGeneratedAt?: string;
+  lastEodReportSentTo?: string[];
+}
+
+export interface EmailDispatchLog {
+  id: string;
+  type: 'REALTIME_DENIAL' | 'EOD_REPORT_PDF' | 'MFA_OTP';
+  recipients: string[];
+  subject: string;
+  previewText: string;
+  hasAttachment: boolean;
+  sentAt: string;
+  status: 'DELIVERED' | 'SIMULATED';
 }
