@@ -60,7 +60,8 @@ WHAT HAPPENS ON STARTUP:
      - visits (Access decision records & visitor audit logs)
      - biosecurity_alerts (Quarantine hold incidents)
      - email_dispatch_logs (Outbound notification audit logs)
-4. It seeds baseline data (default admin, baseline questions, baseline visitors).
+4. ZERO DATA SEEDING: No mock, sample, or dummy records are injected into any tables.
+   All tables remain completely clean and ready for your real data entry.
 5. The full-stack applet starts immediately on http://localhost:3000.
 
 4. USER INTERFACES & CREDENTIALS

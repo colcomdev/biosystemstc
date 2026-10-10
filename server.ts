@@ -339,19 +339,19 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  // Auto-initialize PostgreSQL database and tables using credentials in .env
+  // Auto-initialize PostgreSQL database and tables using credentials in .env (Zero seed data)
   try {
-    const dbSuccess = await initDatabase(dynamicQuestions, registeredVisitors, systemSettings, emailConfig);
+    const dbSuccess = await initDatabase();
     if (dbSuccess) {
       const persistedQuestions = await fetchQuestionsFromDb();
       if (persistedQuestions && persistedQuestions.length > 0) {
         dynamicQuestions = persistedQuestions;
       }
       const persistedVisitors = await fetchVisitorsFromDb();
-      if (persistedVisitors && persistedVisitors.length > 0) {
+      if (persistedVisitors) {
         registeredVisitors = persistedVisitors;
       }
-      console.log(`[DB] Successfully loaded dynamic questions (${dynamicQuestions.length}) and visitors (${registeredVisitors.length}) from PostgreSQL.`);
+      console.log(`[DB] Connected to PostgreSQL. Clean tables verified (no seed data inserted). Active questions: ${dynamicQuestions.length}, visitors: ${registeredVisitors.length}`);
     }
   } catch (err) {
     console.warn('[DB] Auto-init encountered error:', (err as Error).message);

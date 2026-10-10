@@ -73,14 +73,9 @@ export function getPool(): pg.Pool | null {
  * 2. Creates the target database if it doesn't already exist
  * 3. Connects to target database
  * 4. Creates all required tables, triggers, and indexes if not exists
- * 5. Seeds baseline data if empty
+ * Clean schema initialization: Does NOT seed any mock or dummy data.
  */
-export async function initDatabase(
-  initialQuestions?: DynamicFormQuestion[],
-  initialVisitors?: RegisteredVisitor[],
-  initialSettings?: SystemSettings,
-  initialEmailConfig?: EmailConfig
-): Promise<boolean> {
+export async function initDatabase(): Promise<boolean> {
   const config = getDbConfig();
   console.log(`[DB] Initializing PostgreSQL connection: host=${config.host}, port=${config.port}, user=${config.user}, db=${config.database}...`);
 
@@ -273,107 +268,10 @@ export async function initDatabase(
       CREATE INDEX IF NOT EXISTS idx_form_questions_order ON form_questions(sort_order ASC);
     `);
 
-    // Step 4: Seed Default Administrator if empty
-    const userCheck = await client.query(`SELECT COUNT(*) as count FROM system_users;`);
-    if (Number(userCheck.rows[0].count) === 0) {
-      await client.query(`
-        INSERT INTO system_users (id, username, email, password_hash, full_name, role, mfa_enabled)
-        VALUES ('usr_admin_01', 'admin', 'admin@colcom.co.zw', 'admin', 'Security & Biosecurity Manager', 'SECURITY_MANAGER', false);
-      `);
-      console.log('[DB] Seeded default administrator (admin / admin).');
-    }
-
-    // Step 5: Seed System Settings if empty
-    const settingsCheck = await client.query(`SELECT COUNT(*) as count FROM system_settings;`);
-    if (Number(settingsCheck.rows[0].count) === 0 && initialSettings) {
-      await client.query(`
-        INSERT INTO system_settings (id, email_mfa_enabled, admin_email, biosecurity_hotline, strict_biometric_threshold, facility_name, logo_url, default_theme)
-        VALUES ('settings_global', $1, $2, $3, $4, $5, $6, $7);
-      `, [
-        initialSettings.emailMfaEnabled,
-        initialSettings.adminEmail,
-        initialSettings.biosecurityHotline,
-        initialSettings.strictBiometricThreshold,
-        initialSettings.facilityName,
-        initialSettings.logoUrl,
-        initialSettings.defaultTheme,
-      ]);
-      console.log('[DB] Seeded system settings.');
-    }
-
-    // Step 6: Seed Email Config if empty
-    const emailConfigCheck = await client.query(`SELECT COUNT(*) as count FROM email_config;`);
-    if (Number(emailConfigCheck.rows[0].count) === 0 && initialEmailConfig) {
-      await client.query(`
-        INSERT INTO email_config (id, recipients, email_alerts_on_denial, eod_report_enabled, eod_report_schedule_time, sender_email, smtp_host, smtp_port)
-        VALUES ('cfg_email_001', $1, $2, $3, $4, $5, $6, $7);
-      `, [
-        JSON.stringify(initialEmailConfig.recipients),
-        initialEmailConfig.emailAlertsOnDenial,
-        initialEmailConfig.eodReportEnabled,
-        initialEmailConfig.eodReportScheduleTime,
-        initialEmailConfig.senderEmail,
-        initialEmailConfig.smtpHost,
-        initialEmailConfig.smtpPort,
-      ]);
-      console.log('[DB] Seeded email configuration.');
-    }
-
-    // Step 7: Seed Baseline Form Questions if empty
-    const questionsCheck = await client.query(`SELECT COUNT(*) as count FROM form_questions;`);
-    if (Number(questionsCheck.rows[0].count) === 0 && initialQuestions && initialQuestions.length > 0) {
-      for (const q of initialQuestions) {
-        await client.query(`
-          INSERT INTO form_questions (id, prompt, type, options, required, sort_order, trigger_red_alert_on, failure_message, category, is_active, is_baseline)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
-        `, [
-          q.id,
-          q.prompt,
-          q.type,
-          q.options ? JSON.stringify(q.options) : null,
-          q.required,
-          q.order,
-          q.triggerRedAlertOn,
-          q.failureMessage,
-          q.category,
-          q.isActive,
-          q.isBaseline ?? false,
-        ]);
-      }
-      console.log(`[DB] Seeded ${initialQuestions.length} baseline dynamic biosecurity questions.`);
-    }
-
-    // Step 8: Seed Baseline Visitors if empty
-    const visitorsCheck = await client.query(`SELECT COUNT(*) as count FROM visitors;`);
-    if (Number(visitorsCheck.rows[0].count) === 0 && initialVisitors && initialVisitors.length > 0) {
-      for (const v of initialVisitors) {
-        await client.query(`
-          INSERT INTO visitors (id, full_name, id_type, id_number, country_of_origin, phone_number, company, category, is_pre_approved, photo_url, embedding_vector, registered_at, last_visit_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          ON CONFLICT (id_type, id_number) DO NOTHING;
-        `, [
-          v.id,
-          v.fullName,
-          v.idType,
-          v.idNumber,
-          v.countryOfOrigin,
-          v.phoneNumber,
-          v.company,
-          v.category,
-          v.isPreApproved,
-          v.photoUrl || null,
-          v.embeddingVector ? JSON.stringify(v.embeddingVector) : null,
-          v.registeredAt,
-          v.lastVisitAt || null,
-        ]);
-      }
-      console.log(`[DB] Seeded ${initialVisitors.length} baseline pre-approved visitors.`);
-    }
-
     client.release();
     dbPool = pool;
     isConnected = true;
-    console.log('[DB] PostgreSQL auto-provisioning completed successfully. Connected and operational.');
+    console.log('[DB] PostgreSQL auto-provisioning completed successfully. Tables ready (clean schema, no seed data).');
     return true;
   } catch (err) {
     const errorMsg = (err as Error).message;

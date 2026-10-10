@@ -65,10 +65,6 @@ CREATE TABLE IF NOT EXISTS system_users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO system_users (username, email, password_hash, full_name, role, mfa_enabled)
-VALUES ('admin', 'admin@colcom.co.zw', crypt('admin', gen_salt('bf')), 'Security & Biosecurity Manager', 'SECURITY_MANAGER', false)
-ON CONFLICT (username) DO NOTHING;
-
 -- Global System Settings
 CREATE TABLE IF NOT EXISTS system_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -81,10 +77,6 @@ CREATE TABLE IF NOT EXISTS system_settings (
     facility_name VARCHAR(150) NOT NULL DEFAULT 'Triple C Pigs t/a Colcom Foods',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-INSERT INTO system_settings (email_mfa_enabled, admin_email)
-VALUES (false, 'admin@colcom.co.zw')
-ON CONFLICT DO NOTHING;
 
 -- Visitors Master Registry
 CREATE TABLE IF NOT EXISTS visitors (
@@ -132,15 +124,6 @@ CREATE TABLE IF NOT EXISTS form_questions (
     is_baseline BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
--- Baseline Questions
-INSERT INTO form_questions (prompt, type, required, sort_order, trigger_red_alert_on, failure_message, category, is_active, is_baseline)
-VALUES 
-('Have You been in Contact with any cloven hoofed animal in the last 72 hours?', 'BOOLEAN', true, 1, 'TRUE', 'CRITICAL QUARANTINE BREACH: Cloven-hoofed animal contact declared within last 72 hours. High African Swine Fever / FMD transmission risk.', 'BIOSECURITY', true, true),
-('Are you carrying any meat or Meat Products? (Search Vehicles for meat products).', 'BOOLEAN', true, 2, 'TRUE', 'CONTRABAND DETECTED: Carrying uncertified meat or meat products into pig production boundaries is strictly prohibited under Innscor Biosecurity Policy Sec 4.2.', 'BIOSECURITY', true, true),
-('Is your name on the visitors'' register ?', 'BOOLEAN', true, 3, 'FALSE', 'VISITOR REGISTER HOLD: Visitor name or identity is not pre-approved on the Triple C Pigs authorized entry register.', 'BIOSECURITY', true, true),
-('Visitor Digital Signature Confirmation', 'SIGNATURE', true, 4, 'NONE', 'Digital legal declaration signature is mandatory.', 'BIOSECURITY', true, true)
-ON CONFLICT DO NOTHING;
 
 -- Visits Table
 CREATE TABLE IF NOT EXISTS visits (
@@ -225,10 +208,6 @@ CREATE TABLE IF NOT EXISTS email_config (
     last_eod_report_sent_to JSONB,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-INSERT INTO email_config (recipients, email_alerts_on_denial, eod_report_enabled)
-VALUES ('["biosecurity@colcom.co.zw", "security.mgr@colcom.co.zw", "audits@innscorafrica.com"]'::jsonb, true, true)
-ON CONFLICT DO NOTHING;
 
 -- Email Notification Logs Table
 CREATE TABLE IF NOT EXISTS email_dispatch_logs (
