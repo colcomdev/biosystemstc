@@ -153,10 +153,10 @@ let dynamicQuestions: DynamicFormQuestion[] = [
     id: 'q_baseline_5',
     prompt: 'Visitor Digital Signature Confirmation',
     type: 'SIGNATURE',
-    required: true,
+    required: false,
     order: 5,
     triggerRedAlertOn: 'NONE',
-    failureMessage: 'Digital legal declaration signature is mandatory.',
+    failureMessage: 'Digital legal declaration signature is optional.',
     category: 'BIOSECURITY',
     isActive: true,
     isBaseline: true,
@@ -755,10 +755,6 @@ async function startServer() {
       errors.push('Vehicle registration must be at least 3 characters if provided.');
     }
 
-    if (!payload.digitalSignature) {
-      errors.push('Visitor Digital Signature is strictly required for legal biosecurity compliance.');
-    }
-
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
@@ -774,6 +770,10 @@ async function startServer() {
     const activeQuestions = dynamicQuestions.filter((q) => q.isActive);
 
     for (const q of activeQuestions) {
+      if (q.type === 'SIGNATURE') {
+        // Signatures are non-mandatory / optional
+        continue;
+      }
       const ans = responses[q.id];
 
       if (q.required && (ans === undefined || ans === null || ans === '')) {

@@ -213,10 +213,6 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
       errs.push('Purpose of visit exceeds maximum allowed 3500 characters.');
     }
 
-    if (!digitalSignature) {
-      errs.push('Visitor Digital Signature is strictly required for legal biosecurity compliance.');
-    }
-
     setValidationErrors(errs);
     return errs.length === 0;
   };
@@ -769,10 +765,10 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
             </div>
           </div>
 
-          {/* Mandatory Digital Legal Signature */}
+          {/* Optional Digital Legal Signature */}
           <DigitalSignaturePad
             onSignatureChange={(sig) => setDigitalSignature(sig)}
-            required
+            required={false}
           />
         </div>
 

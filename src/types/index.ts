@@ -68,7 +68,7 @@ export interface GateEntryPayload {
   purposeOfVisit: string;
   fromOrigin: string;
   dynamicResponses: Record<string, boolean | string>;
-  digitalSignature: string;
+  digitalSignature?: string;
   capturedFaceImage?: string; // Optional photo
   capturedEmbedding?: number[]; // Optional 512-dim embedding
   gateId: string;

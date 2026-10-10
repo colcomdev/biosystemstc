@@ -13,7 +13,7 @@ interface DigitalSignaturePadProps {
 
 export const DigitalSignaturePad: React.FC<DigitalSignaturePadProps> = ({
   onSignatureChange,
-  required = true,
+  required = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -100,7 +100,7 @@ export const DigitalSignaturePad: React.FC<DigitalSignaturePadProps> = ({
       <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
         <label className="flex items-center gap-1.5">
           <PenLine className="w-3.5 h-3.5 text-emerald-400" />
-          Visitor Digital Signature {required && <span className="text-rose-400">*</span>}
+          Visitor Digital Signature {required ? <span className="text-rose-400">*</span> : <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>}
         </label>
         {hasSignature && (
           <button
@@ -131,12 +131,12 @@ export const DigitalSignaturePad: React.FC<DigitalSignaturePadProps> = ({
 
         {!hasSignature && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-400/70 text-xs italic">
-            Sign inside this box with finger or stylus
+            Sign inside this box with finger or stylus (optional)
           </div>
         )}
       </div>
       <p className="text-[10px] text-slate-400">
-        By signing, the visitor legally affirms all ASF biosecurity declarations under penalty of Innscor access denial.
+        Optional declaration signature for visitor audit trail.
       </p>
     </div>
   );

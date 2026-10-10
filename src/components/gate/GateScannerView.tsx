@@ -317,10 +317,6 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
       errs.push('Purpose of visit cannot exceed 3500 characters.');
     }
 
-    if (!digitalSignature) {
-      errs.push('Visitor Digital Signature is strictly required for legal biosecurity compliance.');
-    }
-
     setValidationErrors(errs);
     return errs.length === 0;
   };
@@ -1042,15 +1038,15 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
             )}
           </div>
 
-          {/* Mandatory Digital Signature */}
+          {/* Optional Digital Signature */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-200">
-              Mandatory Legal Biosecurity Declaration Signature <span className="text-rose-400">*</span>
+              Visitor Digital Signature <span className="text-slate-400 font-normal">(Optional)</span>
             </label>
             <p className="text-[11px] text-slate-400">
-              Visitor hereby certifies under penalties of law that all biosecurity declarations regarding cloven-hoofed animal contact and meat contraband are accurate.
+              Optional legal biosecurity declaration signature for visitor audit trail.
             </p>
-            <DigitalSignaturePad onSignatureChange={setDigitalSignature} />
+            <DigitalSignaturePad onSignatureChange={setDigitalSignature} required={false} />
           </div>
         </div>
 
