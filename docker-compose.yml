@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # ==============================================================================
+  # PostgreSQL 16 with pgvector Extension
+  # ==============================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: colcom_postgres_vector
+    restart: always
+    environment:
+      POSTGRES_USER: colcom_admin
+      POSTGRES_PASSWORD: colcom_secure_password_2026
+      POSTGRES_DB: colcom_biosecurity_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U colcom_admin -d colcom_biosecurity_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==============================================================================
+  # Colcom Biosecurity Gate & Automated Decision Engine Application Server
+  # ==============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: colcom_gate_app
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://colcom_admin:colcom_secure_password_2026@postgres:5432/colcom_biosecurity_db?schema=public
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+    driver: local

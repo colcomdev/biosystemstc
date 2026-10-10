@@ -1,0 +1,6 @@
+{
+  "name": "Colcom Biosecurity Access & Gate Decision System",
+  "description": "Automated biometric visitor management, African Swine Fever & FMD biosecurity gate decision engine, and real-time security operations center for Triple C Pigs t/a Colcom Foods.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
