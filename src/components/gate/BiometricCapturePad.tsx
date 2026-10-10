@@ -13,6 +13,7 @@ interface BiometricCapturePadProps {
   onSkip?: () => void;
   selectedVisitor?: RegisteredVisitor | null;
   forcePassBiometric?: boolean;
+  visitorName?: string;
 }
 
 export const BiometricCapturePad: React.FC<BiometricCapturePadProps> = ({
@@ -20,6 +21,7 @@ export const BiometricCapturePad: React.FC<BiometricCapturePadProps> = ({
   onSkip,
   selectedVisitor,
   forcePassBiometric = true,
+  visitorName,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -223,7 +225,7 @@ export const BiometricCapturePad: React.FC<BiometricCapturePadProps> = ({
                 onClick={() => handleCapture(true)}
                 className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] shadow-md shadow-emerald-950/40"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Camera className="w-3.5 h-3.5" />
                 Capture Photo
               </button>
 

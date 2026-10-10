@@ -10,7 +10,7 @@ export const emailDispatchLogs: EmailDispatchLog[] = [
   {
     id: 'eml_seed_1',
     type: 'REALTIME_DENIAL',
-    recipients: ['biosecurity@colcom.co.zw', 'security.mgr@colcom.co.zw'],
+    recipients: ['soc@triplecpigs.co.zw', 'biosecurity@triplecpigs.co.zw'],
     subject: '[BIOSECURITY ALERT] ENTRY DENIED: Kudakwashe Shumba - Triple C Pigs Gate 01',
     previewText: 'Triggered African Swine Fever Quarantine Rule: Cloven-Hoofed Animal Contact within 72h.',
     hasAttachment: false,
@@ -73,14 +73,15 @@ export async function sendDenialEmailAlert(
 export async function sendEodReportEmail(
   config: EmailConfig,
   stats: TelemetryStats,
-  logs: GateLogRecord[]
+  logs: GateLogRecord[],
+  logoBase64?: string | null
 ): Promise<EmailDispatchLog> {
   const reportDate = new Date().toLocaleDateString('en-GB');
   const subject = `[EOD REPORT] Triple C Pigs Daily Biosecurity & Gate Audit Summary (${reportDate})`;
   const previewText = `Daily summary compiled: ${stats.todayTotalAttempts} total attempts, ${stats.todayGranted} granted, ${stats.todayDenied} denied. PDF report attached.`;
 
-  // Generate binary PDF
-  const pdfBytes = generateEodPdfReport(stats, logs, reportDate);
+  // Generate binary PDF with embedded corporate logo
+  const pdfBytes = generateEodPdfReport(stats, logs, reportDate, logoBase64);
 
   const logEntry: EmailDispatchLog = {
     id: `eml_eod_${Date.now()}`,

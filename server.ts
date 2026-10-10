@@ -5,7 +5,9 @@
 
 import express, { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import {
   AccessDecisionResponse,
@@ -30,33 +32,53 @@ import { sendDenialEmailAlert, sendEodReportEmail, emailDispatchLogs } from './s
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Ensure upload directory exists for corporate logos
+const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// Multer storage for logo upload
+const logoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `company_logo_${Date.now()}${ext}`);
+  },
+});
+const logoUpload = multer({
+  storage: logoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
 // System Settings (Default: Email MFA disabled for seamless initial login)
 let systemSettings: SystemSettings = {
   emailMfaEnabled: false,
   adminEmail: 'admin@colcom.co.zw',
   biosecurityHotline: '+263 77 100 2938',
   strictBiometricThreshold: 0.85,
-  quarantineSmsAlerts: true,
-  webhookEndpoint: 'https://security-gateway.colcom.co.zw/webhooks/biosecurity-incident',
-  facilityName: 'Triple C Pigs t/a Colcom Foods',
+  facilityName: 'INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS',
+  logoUrl: null,
+  defaultTheme: 'dark',
 };
 
 // Email & EOD Report Configuration
 let emailConfig: EmailConfig = {
   id: 'cfg_email_001',
   recipients: [
-    'biosecurity@colcom.co.zw',
-    'security.mgr@colcom.co.zw',
+    'soc@triplecpigs.co.zw',
+    'biosecurity@triplecpigs.co.zw',
+    'security.mgr@triplecpigs.co.zw',
     'audits@innscorafrica.com',
   ],
   emailAlertsOnDenial: true,
   eodReportEnabled: true,
   eodReportScheduleTime: '18:00',
-  senderEmail: 'no-reply.security@colcom.co.zw',
-  smtpHost: 'smtp.colcom.co.zw',
+  senderEmail: 'no-reply.soc@triplecpigs.co.zw',
+  smtpHost: 'smtp.triplecpigs.co.zw',
   smtpPort: 587,
   lastEodReportGeneratedAt: new Date(Date.now() - 86400000).toISOString(),
-  lastEodReportSentTo: ['biosecurity@colcom.co.zw', 'security.mgr@colcom.co.zw'],
+  lastEodReportSentTo: ['soc@triplecpigs.co.zw', 'biosecurity@triplecpigs.co.zw'],
 };
 
 // Active MFA OTP store
@@ -234,7 +256,6 @@ let biosecurityAlerts: BiosecurityAlert[] = [
       'Carrying meat products without irradiation clearance certificate',
     ],
     status: 'PENDING_ACK',
-    smsDelivered: true,
     webhookDispatched: true,
     emailDispatched: true,
   },
@@ -259,6 +280,24 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '15mb' }));
+  app.use('/uploads', express.static(UPLOAD_DIR));
+
+  // Logo Upload & Delete Endpoints
+  app.post('/api/settings/logo', logoUpload.single('logo'), (req: Request, res: Response) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No logo image file uploaded.' });
+    }
+    const logoUrl = `/uploads/${req.file.filename}`;
+    systemSettings.logoUrl = logoUrl;
+    broadcastSSE('settings_updated', { logoUrl });
+    return res.json({ success: true, logoUrl });
+  });
+
+  app.delete('/api/settings/logo', (_req: Request, res: Response) => {
+    systemSettings.logoUrl = null;
+    broadcastSSE('settings_updated', { logoUrl: null });
+    return res.json({ success: true, message: 'Custom logo removed.' });
+  });
 
   // SSE Stream
   app.get('/api/events', (req: Request, res: Response) => {
@@ -356,7 +395,26 @@ async function startServer() {
       averageDecisionTimeMs: 135,
     };
 
-    const logEntry = await sendEodReportEmail(emailConfig, stats, visitorLogs);
+    function getLogoBase64(): string | undefined {
+      if (!systemSettings.logoUrl) return undefined;
+      if (systemSettings.logoUrl.startsWith('data:image')) {
+        return systemSettings.logoUrl;
+      }
+      if (systemSettings.logoUrl.startsWith('/uploads/')) {
+        const filename = systemSettings.logoUrl.replace(/^\/uploads\//, '');
+        const filePath = path.resolve(UPLOAD_DIR, filename);
+        if (fs.existsSync(filePath)) {
+          const buf = fs.readFileSync(filePath);
+          const ext = path.extname(filePath).replace('.', '').toLowerCase() || 'png';
+          const mime = ext === 'jpg' ? 'jpeg' : ext;
+          return `data:image/${mime};base64,${buf.toString('base64')}`;
+        }
+      }
+      return undefined;
+    }
+
+    const logoBase64 = getLogoBase64();
+    const logEntry = await sendEodReportEmail(emailConfig, stats, visitorLogs, logoBase64);
     broadcastSSE('email_dispatched', { type: 'EOD_REPORT_PDF', logEntry });
 
     return res.json({
@@ -382,7 +440,26 @@ async function startServer() {
       averageDecisionTimeMs: 135,
     };
 
-    const pdfBuffer = generateEodPdfReport(stats, visitorLogs);
+    function getLogoBase64(): string | undefined {
+      if (!systemSettings.logoUrl) return undefined;
+      if (systemSettings.logoUrl.startsWith('data:image')) {
+        return systemSettings.logoUrl;
+      }
+      if (systemSettings.logoUrl.startsWith('/uploads/')) {
+        const filename = systemSettings.logoUrl.replace(/^\/uploads\//, '');
+        const filePath = path.resolve(UPLOAD_DIR, filename);
+        if (fs.existsSync(filePath)) {
+          const buf = fs.readFileSync(filePath);
+          const ext = path.extname(filePath).replace('.', '').toLowerCase() || 'png';
+          const mime = ext === 'jpg' ? 'jpeg' : ext;
+          return `data:image/${mime};base64,${buf.toString('base64')}`;
+        }
+      }
+      return undefined;
+    }
+
+    const logoBase64 = getLogoBase64();
+    const pdfBuffer = generateEodPdfReport(stats, visitorLogs, undefined, logoBase64);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="colcom_eod_biosecurity_report_${new Date().toISOString().slice(0, 10)}.pdf"`);
     return res.send(Buffer.from(pdfBuffer));
@@ -758,7 +835,6 @@ async function startServer() {
         idNumber: payload.idNumber,
         countryOfOrigin: payload.countryOfOrigin,
         quarantineProtocolTriggered: isCriticalQuarantine,
-        smsAlertFired: systemSettings.quarantineSmsAlerts,
         webhookAlertFired: true,
         emailAlertDispatched,
         emailRecipientsNotified,
@@ -797,7 +873,6 @@ async function startServer() {
         priority: isCriticalQuarantine ? 'CRITICAL' : 'HIGH',
         reasons: denialReasons.map((d) => d.description),
         status: 'PENDING_ACK',
-        smsDelivered: systemSettings.quarantineSmsAlerts,
         webhookDispatched: true,
         emailDispatched: emailAlertDispatched,
       };

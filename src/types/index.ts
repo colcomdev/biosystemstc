@@ -1,6 +1,7 @@
 /**
- * Colcom Foods - Triple C Pigs Biometric Visitor Management System
- * Shared Types & Domain Models (Dynamic Forms, ID/Passport, Email Alerts, PDF Reports)
+ * INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+ * Biometric Visitor Management & Biosecurity Gate Decision System
+ * Shared Types & Domain Models
  */
 
 export type Role = 'GATE_OPERATOR' | 'BIOSECURITY_OFFICER' | 'SECURITY_MANAGER' | 'AUDITOR';
@@ -10,6 +11,8 @@ export type AccessStatus = 'GRANTED' | 'DENIED';
 export type DenialSeverity = 'CRITICAL_QUARANTINE' | 'REGISTRATION_HOLD' | 'BIOMETRIC_MISMATCH' | 'IDENTITY_ERROR';
 
 export type IdentificationType = 'NATIONAL_ID' | 'PASSPORT';
+
+export type AppTheme = 'light' | 'dark';
 
 export interface User {
   id: string;
@@ -31,8 +34,8 @@ export interface RegisteredVisitor {
   company: string;
   category: 'CONTRACTOR' | 'SUPPLIER' | 'OFFICIAL_AUDITOR' | 'CUSTOMER' | 'VET_INSPECTOR';
   isPreApproved: boolean;
-  photoUrl: string;
-  embeddingVector?: number[]; // 512-dimensional vector (Optional)
+  photoUrl?: string;
+  embeddingVector?: number[];
   registeredAt: string;
   lastVisitAt?: string;
 }
@@ -52,7 +55,7 @@ export interface DynamicFormQuestion {
   failureMessage: string;
   category: 'BIOSECURITY' | 'IDENTITY' | 'SAFETY' | 'GENERAL';
   isActive: boolean;
-  isBaseline?: boolean; // Protect baseline questions from accidental deletion
+  isBaseline?: boolean;
 }
 
 export interface GateEntryPayload {
@@ -60,14 +63,14 @@ export interface GateEntryPayload {
   idType: IdentificationType;
   idNumber: string;
   countryOfOrigin: string;
-  visitorContactNumber: string; // Numbers only, min length 10
-  vehicleRegNumber?: string;    // Optional, min length 3
-  purposeOfVisit: string;       // Textarea, max length 3500
-  fromOrigin: string;           // Required, min length 3
+  visitorContactNumber: string;
+  vehicleRegNumber?: string;
+  purposeOfVisit: string;
+  fromOrigin: string;
   dynamicResponses: Record<string, boolean | string>;
-  digitalSignature: string;      // Base64 PNG data URL or signature string
-  capturedFaceImage?: string;   // Optional photo
-  capturedEmbedding?: number[]; // Optional 512-dimensional vector
+  digitalSignature: string;
+  capturedFaceImage?: string; // Optional photo
+  capturedEmbedding?: number[]; // Optional 512-dim embedding
   gateId: string;
   operatorId: string;
   timestamp?: string;
@@ -100,10 +103,10 @@ export interface AccessDecisionResponse {
     zoneAccess: string[];
   };
   quarantineProtocolTriggered?: boolean;
-  smsAlertFired?: boolean;
-  webhookAlertFired?: boolean;
   emailAlertDispatched?: boolean;
   emailRecipientsNotified?: string[];
+  smsAlertFired?: boolean;
+  webhookAlertFired?: boolean;
   loggedAt: string;
 }
 
@@ -118,9 +121,9 @@ export interface BiosecurityAlert {
   priority: 'HIGH' | 'CRITICAL';
   reasons: string[];
   status: 'PENDING_ACK' | 'INVESTIGATING' | 'ESCALATED' | 'RESOLVED';
-  smsDelivered: boolean;
-  webhookDispatched: boolean;
   emailDispatched: boolean;
+  smsDelivered?: boolean;
+  webhookDispatched?: boolean;
 }
 
 export interface GateLogRecord {
@@ -158,9 +161,11 @@ export interface SystemSettings {
   adminEmail: string;
   biosecurityHotline: string;
   strictBiometricThreshold: number;
-  quarantineSmsAlerts: boolean;
-  webhookEndpoint: string;
   facilityName: string;
+  logoUrl: string | null;
+  defaultTheme: AppTheme;
+  quarantineSmsAlerts?: boolean;
+  webhookEndpoint?: string;
 }
 
 export interface EmailConfig {
@@ -168,7 +173,7 @@ export interface EmailConfig {
   recipients: string[];
   emailAlertsOnDenial: boolean;
   eodReportEnabled: boolean;
-  eodReportScheduleTime: string; // e.g. "18:00"
+  eodReportScheduleTime: string;
   senderEmail: string;
   smtpHost: string;
   smtpPort: number;

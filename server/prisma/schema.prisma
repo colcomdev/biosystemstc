@@ -1,0 +1,198 @@
+// ==============================================================================
+// INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+// Production PostgreSQL Prisma Schema
+// Biometric Visitor Management & Automated Gate Decision Engine
+// ==============================================================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  GATE_OPERATOR
+  BIOSECURITY_OFFICER
+  SECURITY_MANAGER
+  AUDITOR
+}
+
+enum IdentificationType {
+  NATIONAL_ID
+  PASSPORT
+}
+
+enum GateDecisionStatus {
+  GRANTED
+  DENIED
+}
+
+enum QuestionDataType {
+  BOOLEAN
+  TEXT
+  SELECT
+  SIGNATURE
+}
+
+enum RedTriggerCondition {
+  TRUE
+  FALSE
+  NONE
+}
+
+model SystemUser {
+  id           String     @id @default(uuid())
+  username     String     @unique
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  fullName     String     @map("full_name")
+  role         UserRole   @default(GATE_OPERATOR)
+  mfaEnabled   Boolean    @default(false) @map("mfa_enabled")
+  gateAssigned String     @default("MAIN_BIOSECURITY_GATE_01") @map("gate_assigned")
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  visits       Visit[]
+
+  @@map("system_users")
+}
+
+model SystemSettings {
+  id                       String   @id @default(uuid())
+  emailMfaEnabled          Boolean  @default(false) @map("email_mfa_enabled")
+  adminEmail               String   @default("admin@colcom.co.zw") @map("admin_email")
+  biosecurityHotline       String   @default("+263 77 100 2938") @map("biosecurity_hotline")
+  strictBiometricThreshold Decimal  @default(0.850) @db.Decimal(4, 3) @map("strict_biometric_threshold")
+  facilityName             String   @default("INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS") @map("facility_name")
+  logoUrl                  String?  @map("logo_url")
+  defaultTheme             String   @default("dark") @map("default_theme")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model EmailConfig {
+  id                    String    @id @default(uuid())
+  recipients            Json      // List of recipient email addresses
+  emailAlertsOnDenial   Boolean   @default(true) @map("email_alerts_on_denial")
+  eodReportEnabled      Boolean   @default(true) @map("eod_report_enabled")
+  eodReportScheduleTime String    @default("18:00") @map("eod_report_schedule_time")
+  senderEmail           String    @default("no-reply.security@colcom.co.zw") @map("sender_email")
+  smtpHost              String    @default("smtp.colcom.co.zw") @map("smtp_host")
+  smtpPort              Int       @default(587) @map("smtp_port")
+  lastEodGeneratedAt    DateTime? @map("last_eod_generated_at")
+  lastEodSentTo         Json?     @map("last_eod_sent_to")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@map("email_config")
+}
+
+model Visitor {
+  id              String             @id @default(uuid())
+  fullName        String             @map("full_name")
+  idType          IdentificationType @default(NATIONAL_ID) @map("id_type")
+  idNumber        String             @map("id_number")
+  countryOfOrigin String             @default("Zimbabwe") @map("country_of_origin")
+  phoneNumber     String             @map("phone_number")
+  company         String?
+  category        String             @default("CONTRACTOR")
+  isPreApproved   Boolean            @default(true) @map("is_pre_approved")
+  photoUrl        String?            @map("photo_url")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  visits          Visit[]
+
+  @@unique([idType, idNumber], name: "uq_visitor_identity")
+  @@index([phoneNumber])
+  @@index([idNumber])
+  @@index([countryOfOrigin])
+  @@map("visitors")
+}
+
+model FormTemplate {
+  id           String         @id @default(uuid())
+  templateName String         @map("template_name")
+  version      Int            @default(1)
+  isActive     Boolean        @default(true) @map("is_active")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  questions    FormQuestion[]
+
+  @@map("form_templates")
+}
+
+model FormQuestion {
+  id                 String              @id @default(uuid())
+  templateId         String?             @map("template_id")
+  template           FormTemplate?       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  prompt             String
+  type               QuestionDataType    @default(BOOLEAN)
+  options            Json?
+  required           Boolean             @default(true)
+  sortOrder          Int                 @default(0) @map("sort_order")
+  triggerRedAlertOn  RedTriggerCondition @default(NONE) @map("trigger_red_alert_on")
+  failureMessage     String              @map("failure_message")
+  category           String              @default("BIOSECURITY")
+  isActive           Boolean             @default(true) @map("is_active")
+  isBaseline         Boolean             @default(false) @map("is_baseline")
+  createdAt          DateTime            @default(now()) @map("created_at")
+
+  responses          VisitResponse[]
+
+  @@index([isActive, sortOrder])
+  @@map("form_questions")
+}
+
+model Visit {
+  id               String             @id @default(uuid())
+  visitorId        String?            @map("visitor_id")
+  visitor          Visitor?           @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  visitorName      String             @map("visitor_name")
+  idType           IdentificationType @map("id_type")
+  idNumber         String             @map("id_number")
+  countryOfOrigin  String             @map("country_of_origin")
+  phoneNumber      String             @map("phone_number")
+  vehicleRegNumber String?            @map("vehicle_reg_number")
+  purposeOfVisit   String             @db.Text @map("purpose_of_visit")
+  fromOrigin       String             @map("from_origin")
+  status           GateDecisionStatus
+  primaryReason    String             @map("primary_reason")
+  similarityScore  Decimal            @default(0.0000) @db.Decimal(5, 4) @map("similarity_score")
+  badgeNumber      String?            @map("badge_number")
+  capturedPhotoUrl String?            @map("captured_photo_url")
+  gateId           String             @default("MAIN_BIOSECURITY_GATE_01") @map("gate_id")
+  operatorId       String?            @map("operator_id")
+  operator         SystemUser?        @relation(fields: [operatorId], references: [id])
+  isOfflineSynced  Boolean            @default(false) @map("is_offline_synced")
+  emailAlertSent   Boolean            @default(false) @map("email_alert_sent")
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  responses        VisitResponse[]
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("visits")
+}
+
+model VisitResponse {
+  id                 String       @id @default(uuid())
+  visitId            String       @map("visit_id")
+  visit              Visit        @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  questionId         String       @map("question_id")
+  question           FormQuestion @relation(fields: [questionId], references: [id])
+  questionPrompt     String       @map("question_prompt")
+  responseValueJson  Json         @map("response_value_json")
+  triggeredRedAlert  Boolean      @default(false) @map("triggered_red_alert")
+  failureReason      String?      @map("failure_reason")
+  createdAt          DateTime     @default(now()) @map("created_at")
+
+  @@index([visitId])
+  @@index([triggeredRedAlert])
+  @@map("visit_responses")
+}

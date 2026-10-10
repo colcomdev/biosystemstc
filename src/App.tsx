@@ -1,5 +1,6 @@
 /**
- * Colcom Foods (Triple C Pigs) - African Swine Fever Biometric Access & Gate Decision System
+ * INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+ * Biometric Visitor Management & Automated Biosecurity Gate Decision System
  * Entry Point Component
  */
 
@@ -10,6 +11,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { OfflineSyncBar } from './components/common/OfflineSyncBar';
 import { User } from './types';
 import { ShieldCheck } from 'lucide-react';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 const INITIAL_USERS: User[] = [
   {
@@ -50,12 +52,15 @@ const INITIAL_USERS: User[] = [
   },
 ];
 
-export default function App() {
+function AppInner() {
+  const { theme } = useTheme();
   const [currentView, setCurrentView] = useState<'GATE' | 'ADMIN'>('GATE');
   const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
   const [systemUsers, setSystemUsers] = useState<User[]>(INITIAL_USERS);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    // Fetch users
     fetch('/api/users')
       .then((res) => (res.ok ? res.json() : INITIAL_USERS))
       .then((users) => {
@@ -65,8 +70,35 @@ export default function App() {
         }
       })
       .catch(() => {
-        // Fallback to initial
+        // Fallback
       });
+
+    // Fetch initial settings for logo
+    fetch('/api/settings')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((settings) => {
+        if (settings && settings.logoUrl) {
+          setLogoUrl(settings.logoUrl);
+        }
+      })
+      .catch(() => {});
+
+    // Listen to SSE for real-time logo/settings updates
+    const eventSource = new EventSource('/api/events');
+    eventSource.addEventListener('settings_updated', (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload.logoUrl !== undefined) {
+          setLogoUrl(payload.logoUrl);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
   const handleSwitchUser = (user: User) => {
@@ -79,12 +111,15 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
-      {/* Top Navbar */}
+    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 selection:bg-emerald-500 selection:text-white ${
+      theme === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
+    }`}>
+      {/* Top Navbar with Dynamic Logo & Theme Switcher */}
       <Navbar
         currentView={currentView}
         onViewChange={setCurrentView}
         currentUser={currentUser}
+        logoUrl={logoUrl}
       />
 
       {/* Main Container */}
@@ -95,7 +130,7 @@ export default function App() {
         {/* View Switch Display */}
         {currentView === 'GATE' ? (
           <div className="space-y-4">
-            <GateScannerView />
+            <GateScannerView logoUrl={logoUrl} />
           </div>
         ) : (
           <AdminDashboard
@@ -103,24 +138,33 @@ export default function App() {
             onSwitchRole={handleSwitchUser}
             systemUsers={systemUsers}
             onExitAdmin={() => setCurrentView('GATE')}
+            logoUrl={logoUrl}
+            onLogoChange={setLogoUrl}
           />
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 py-4 px-6 text-center text-xs text-slate-500 space-y-1">
-        <div className="flex items-center justify-center gap-2">
+      {/* Official Footer with Innscor & Colcom Title */}
+      <footer className={`border-t py-4 px-6 text-center text-xs transition-colors ${
+        theme === 'dark'
+          ? 'border-slate-900 bg-slate-950 text-slate-400'
+          : 'border-slate-200 bg-white text-slate-600'
+      }`}>
+        <div className="flex items-center justify-center gap-2 flex-wrap">
           <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          <span className="font-semibold text-slate-400">
-            Triple C Pigs t/a Colcom Foods
+          <span className="font-bold text-slate-200">
+            INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
           </span>
-          <span>•</span>
-          <span>Innscor Africa Group Biosecurity Standard ISO/IEC 27001</span>
-        </div>
-        <div className="text-[11px] text-slate-600 font-mono">
-          PostgreSQL 16 + pgvector (512-D Cosine Metric) • Real-Time SSE Telemetry • African Swine Fever / FMD Containment Engine
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
   );
 }

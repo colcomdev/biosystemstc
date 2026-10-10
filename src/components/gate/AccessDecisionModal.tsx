@@ -324,12 +324,10 @@ export const AccessDecisionModal: React.FC<AccessDecisionModalProps> = ({
                 </div>
                 <div className="text-slate-400 text-[11px] space-y-1 pl-5">
                   <div>
-                    ✓ <span className="text-slate-200">SMS Alert</span> dispatched to Chief Vet
-                    Officer Dr. Sarah Ndlovu (+263 77 100 2938)
+                    ✓ <span className="text-slate-200">Instant Email Alert</span> dispatched to Triple C SOC
                   </div>
                   <div>
-                    ✓ <span className="text-slate-200">Webhook Alert</span> broadcast to Biosecurity
-                    Operations Center
+                    ✓ <span className="text-slate-200">Webhook Alert</span> broadcast to Triple C SOC
                   </div>
                   <div>
                     ✓ <span className="text-slate-200">PostgreSQL Log</span>: Recorded under table{' '}

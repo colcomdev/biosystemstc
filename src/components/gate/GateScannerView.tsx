@@ -1,15 +1,15 @@
 /**
  * Mobile Handheld Scanner Interface (Field Security View)
- * Optimized for handheld barcode/QR scanners and tablets at Triple C Pigs entry gates.
+ * INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
  * 
- * Strict Surface Isolation: Strictly NO links or access to administrative dashboards,
- * settings, or cross-visitor logs.
+ * Strict Surface Isolation & Production Workflow:
+ * Smart Pre-filled Entry Form -> Biosecurity Declaration -> Optional Photo Capture -> Instant Access Decision Modal.
+ * Strictly NO simulation buttons, demo controls, or access to administrative dashboards, settings, or cross-visitor logs.
  */
 
 import React, { useState, useEffect } from 'react';
 import {
   Shield,
-  QrCode,
   Truck,
   Phone,
   MapPin,
@@ -20,13 +20,15 @@ import {
   WifiOff,
   UserCheck,
   Send,
-  Sparkles,
   RefreshCw,
   Search,
   Globe2,
   CreditCard,
-  ScanLine,
   Camera,
+  X,
+  FileText,
+  User,
+  Building,
 } from 'lucide-react';
 import {
   AccessDecisionResponse,
@@ -39,6 +41,7 @@ import { AccessDecisionModal } from './AccessDecisionModal';
 import { DigitalSignaturePad } from './DigitalSignaturePad';
 import { BiometricCapturePad } from './BiometricCapturePad';
 import { queueOfflineSubmission, getOfflineQueue } from '../../lib/offline-storage';
+import { useTheme } from '../../context/ThemeContext';
 
 const POPULAR_COUNTRIES = [
   'Zimbabwe',
@@ -48,13 +51,24 @@ const POPULAR_COUNTRIES = [
   'Botswana',
   'Namibia',
   'Malawi',
+  'Kenya',
+  'Tanzania',
   'United Kingdom',
   'China',
   'Other Country',
 ];
 
-export const GateScannerView: React.FC = () => {
-  // Identity Fields
+interface GateScannerViewProps {
+  logoUrl?: string | null;
+}
+
+export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propLogoUrl }) => {
+  const { theme } = useTheme();
+
+  // Branding Logo State
+  const [activeLogo, setActiveLogo] = useState<string | null>(propLogoUrl || null);
+
+  // Identity Parameters
   const [visitorName, setVisitorName] = useState('');
   const [idType, setIdType] = useState<IdentificationType>('NATIONAL_ID');
   const [idNumber, setIdNumber] = useState('');
@@ -64,22 +78,20 @@ export const GateScannerView: React.FC = () => {
   const [purposeOfVisit, setPurposeOfVisit] = useState('');
   const [fromOrigin, setFromOrigin] = useState('');
 
-  // Dynamic Form Questions State
+  // Dynamic Form Questions
   const [questions, setQuestions] = useState<DynamicFormQuestion[]>([]);
   const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, boolean | string>>({});
 
-  // Digital Signature & Biometrics
+  // Digital Signature & Optional Photo Capture
   const [digitalSignature, setDigitalSignature] = useState('');
   const [capturedPhoto, setCapturedPhoto] = useState('');
   const [capturedEmbedding, setCapturedEmbedding] = useState<number[] | undefined>(undefined);
+  const [showPhotoCapture, setShowPhotoCapture] = useState(false);
 
-  // Registered Visitors Whitelist & Smart Pre-fill
-  const [registeredVisitors, setRegisteredVisitors] = useState<RegisteredVisitor[]>([]);
-  const [selectedVisitor, setSelectedVisitor] = useState<RegisteredVisitor | null>(null);
-
-  // Smart Lookup Input
+  // Smart Pre-fill Lookup
   const [lookupQuery, setLookupQuery] = useState('');
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [lookupFeedback, setLookupFeedback] = useState<{ message: string; isSuccess: boolean } | null>(null);
 
   // Network & Offline Status
   const [isOfflineMode, setIsOfflineMode] = useState(!navigator.onLine);
@@ -91,13 +103,10 @@ export const GateScannerView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  // Simulated QR Scanner Camera Overlay
-  const [isQrScannerActive, setIsQrScannerActive] = useState(false);
-
   useEffect(() => {
     fetchActiveQuestions();
-    fetchVisitors();
     updateOfflineCount();
+    fetchSystemLogo();
 
     const handleOnline = () => setIsOfflineMode(false);
     const handleOffline = () => setIsOfflineMode(true);
@@ -111,6 +120,26 @@ export const GateScannerView: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (propLogoUrl !== undefined) {
+      setActiveLogo(propLogoUrl);
+    }
+  }, [propLogoUrl]);
+
+  const fetchSystemLogo = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logoUrl) {
+          setActiveLogo(data.logoUrl);
+        }
+      }
+    } catch {
+      // Offline fallback
+    }
+  };
+
   const updateOfflineCount = () => {
     setOfflinePendingCount(getOfflineQueue().length);
   };
@@ -122,11 +151,10 @@ export const GateScannerView: React.FC = () => {
         const data: DynamicFormQuestion[] = await res.json();
         setQuestions(data);
 
-        // Pre-initialize baseline default answers for convenient gate workflow
+        // Pre-initialize baseline default answers for clean state
         const initialAnswers: Record<string, boolean | string> = {};
         data.forEach((q) => {
           if (q.type === 'BOOLEAN') {
-            // Default: clean state (false for animal contact and meat, true for on register)
             if (q.prompt.toLowerCase().includes('register')) {
               initialAnswers[q.id] = true;
             } else {
@@ -141,108 +169,63 @@ export const GateScannerView: React.FC = () => {
     }
   };
 
-  const fetchVisitors = async () => {
-    try {
-      const res = await fetch('/api/visitors');
-      if (res.ok) {
-        const data: RegisteredVisitor[] = await res.json();
-        setRegisteredVisitors(data);
-      }
-    } catch {
-      // Offline fallback
-    }
-  };
-
   // Smart Lookup Trigger
   const handleSmartLookup = async (query = lookupQuery) => {
     if (!query.trim()) return;
     setIsLookingUp(true);
+    setLookupFeedback(null);
+
     try {
       const res = await fetch(`/api/visitors/lookup?q=${encodeURIComponent(query)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.found && data.visitor) {
           applyVisitorToForm(data.visitor);
+          setLookupFeedback({
+            message: `Pre-registered visitor verified: ${data.visitor.fullName} (${data.visitor.company})`,
+            isSuccess: true,
+          });
         } else {
-          setValidationErrors([`No pre-registered visitor found for query: "${query}". Enter details manually.`]);
+          setLookupFeedback({
+            message: `No pre-registered visitor match for "${query}". Please enter credentials manually below.`,
+            isSuccess: false,
+          });
         }
       }
     } catch {
-      setValidationErrors(['Lookup failed. Check connectivity.']);
+      setLookupFeedback({
+        message: 'Lookup request failed due to connectivity. Please enter details manually.',
+        isSuccess: false,
+      });
     } finally {
       setIsLookingUp(false);
     }
   };
 
-  const applyVisitorToForm = (visitor: RegisteredVisitor, isQuarantineTrigger = false) => {
-    setSelectedVisitor(visitor);
+  const applyVisitorToForm = (visitor: RegisteredVisitor) => {
     setVisitorName(visitor.fullName);
     setIdType(visitor.idType);
     setIdNumber(visitor.idNumber);
     setCountryOfOrigin(visitor.countryOfOrigin || 'Zimbabwe');
     setVisitorContactNumber(visitor.phoneNumber);
-    setVehicleRegNumber('AFE-' + Math.floor(1000 + Math.random() * 9000));
+    if (!vehicleRegNumber) {
+      setVehicleRegNumber('AFE-' + Math.floor(1000 + Math.random() * 9000));
+    }
     setPurposeOfVisit(
       visitor.category === 'CONTRACTOR'
-        ? 'Scheduled refrigeration chiller maintenance in Pig Unit 2'
+        ? 'Scheduled maintenance of facility equipment'
         : visitor.category === 'VET_INSPECTOR'
-        ? 'African Swine Fever quarterly tissue surveillance'
-        : 'Feed delivery & bulk grain unloading'
+        ? 'Biosecurity health inspection & herd surveillance'
+        : 'Official visit / supplier delivery'
     );
-    setFromOrigin(visitor.company || 'Harare Industrial Park');
-    setCapturedPhoto(visitor.photoUrl);
-    setCapturedEmbedding(visitor.embeddingVector);
+    setFromOrigin(visitor.company || 'Triple C Partner');
+    if (visitor.photoUrl) {
+      setCapturedPhoto(visitor.photoUrl);
+    }
+    if (visitor.embeddingVector) {
+      setCapturedEmbedding(visitor.embeddingVector);
+    }
 
-    // Apply baseline questions
-    const answers: Record<string, boolean | string> = {};
-    questions.forEach((q) => {
-      if (q.prompt.toLowerCase().includes('cloven')) {
-        answers[q.id] = isQuarantineTrigger; // true = breach
-      } else if (q.prompt.toLowerCase().includes('meat')) {
-        answers[q.id] = isQuarantineTrigger; // true = breach
-      } else if (q.prompt.toLowerCase().includes('register')) {
-        answers[q.id] = !isQuarantineTrigger; // true = verified on register
-      } else if (q.type === 'BOOLEAN') {
-        answers[q.id] = false;
-      }
-    });
-    setDynamicAnswers(answers);
-    setValidationErrors([]);
-  };
-
-  const handleSimulateQrScan = (visitor: RegisteredVisitor) => {
-    setIsQrScannerActive(true);
-    setTimeout(() => {
-      setIsQrScannerActive(false);
-      applyVisitorToForm(visitor, false);
-    }, 800);
-  };
-
-  const handleSimulateAsfBreach = () => {
-    setVisitorName('Kudakwashe Shumba');
-    setIdType('NATIONAL_ID');
-    setIdNumber('63-110293-F-11');
-    setCountryOfOrigin('Zimbabwe');
-    setVisitorContactNumber('263772810991');
-    setVehicleRegNumber('ACD-3910');
-    setPurposeOfVisit('Drop off livestock handling equipment');
-    setFromOrigin('Beatrice Livestock Auction Kraal');
-    setSelectedVisitor(null);
-    setCapturedEmbedding(undefined);
-
-    const answers: Record<string, boolean | string> = {};
-    questions.forEach((q) => {
-      if (q.prompt.toLowerCase().includes('cloven')) {
-        answers[q.id] = true; // BREACH!
-      } else if (q.prompt.toLowerCase().includes('meat')) {
-        answers[q.id] = true; // BREACH!
-      } else if (q.prompt.toLowerCase().includes('register')) {
-        answers[q.id] = false; // BREACH!
-      } else if (q.type === 'BOOLEAN') {
-        answers[q.id] = false;
-      }
-    });
-    setDynamicAnswers(answers);
     setValidationErrors([]);
   };
 
@@ -256,7 +239,7 @@ export const GateScannerView: React.FC = () => {
     }
 
     if (!idNumber.trim() || idNumber.trim().length < 3) {
-      errs.push(`${idType === 'PASSPORT' ? 'Passport Number' : 'National ID'} is required (min 3 chars).`);
+      errs.push(`${idType === 'PASSPORT' ? 'Passport Number' : 'National ID'} is required (minimum 3 characters).`);
     }
 
     if (!countryOfOrigin.trim()) {
@@ -264,7 +247,7 @@ export const GateScannerView: React.FC = () => {
     }
 
     if (!cleanContact || cleanContact.length < 10) {
-      errs.push('Visitor Contact Number must contain digits only with min length 10 (e.g. 263773466252).');
+      errs.push('Visitor Contact Number must contain numbers only with min length 10 (e.g. 263773466252).');
     }
 
     if (vehicleRegNumber.trim() && vehicleRegNumber.trim().length < 3) {
@@ -282,7 +265,7 @@ export const GateScannerView: React.FC = () => {
     }
 
     if (!digitalSignature) {
-      errs.push('Visitor Digital Signature is mandatory for legal biosecurity compliance.');
+      errs.push('Visitor Digital Signature is strictly required for legal biosecurity compliance.');
     }
 
     setValidationErrors(errs);
@@ -308,8 +291,8 @@ export const GateScannerView: React.FC = () => {
       fromOrigin,
       dynamicResponses: dynamicAnswers,
       digitalSignature,
-      capturedFaceImage: capturedPhoto,
-      capturedEmbedding,
+      capturedFaceImage: capturedPhoto || undefined,
+      capturedEmbedding: capturedEmbedding || undefined,
       gateId: 'MAIN_BIOSECURITY_GATE_01',
       operatorId: 'usr_001',
       timestamp: new Date().toISOString(),
@@ -319,7 +302,7 @@ export const GateScannerView: React.FC = () => {
       queueOfflineSubmission(payload);
       updateOfflineCount();
 
-      // Offline evaluation
+      // Offline evaluation fallback
       let isOfflinePass = true;
       const offlineDenials = [];
 
@@ -417,37 +400,47 @@ export const GateScannerView: React.FC = () => {
     setDigitalSignature('');
     setCapturedPhoto('');
     setCapturedEmbedding(undefined);
-    setSelectedVisitor(null);
+    setShowPhotoCapture(false);
     setValidationErrors([]);
     setLookupQuery('');
+    setLookupFeedback(null);
     fetchActiveQuestions();
   };
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-4">
-      {/* Handheld Device Header */}
+      {/* Handheld Device Header with Corporate Branding */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-900/50 shrink-0">
-              <Shield className="w-7 h-7" />
-            </div>
+            {activeLogo ? (
+              <img
+                src={activeLogo}
+                alt="Corporate Logo"
+                className="h-12 max-w-[140px] object-contain rounded-xl p-1 bg-white/10 border border-slate-700 shrink-0 shadow-md"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-950/60 font-black text-lg tracking-wider shrink-0">
+                3C
+              </div>
+            )}
+
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black text-white tracking-tight">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-base sm:text-lg font-black text-white tracking-tight">
                   Handheld Gate Scanner
                 </h1>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   BIO-GATE 01
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
-                Triple C Pigs • African Swine Fever / FMD Bio-Interlock
+              <p className="text-xs text-slate-400 font-medium">
+                INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
               </p>
             </div>
           </div>
 
-          {/* Network & Offline Toggle */}
+          {/* Network & Offline Status */}
           <div className="flex items-center gap-2 self-end sm:self-center">
             <button
               type="button"
@@ -473,14 +466,14 @@ export const GateScannerView: React.FC = () => {
           </div>
         </div>
 
-        {/* Camera QR Scanner Simulation Bar */}
+        {/* Pre-Approved Visitor Lookup Bar */}
         <div className="mt-4 pt-3 border-t border-slate-800 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <ScanLine className="w-3.5 h-3.5 text-emerald-400" />
-              Camera QR Scanner &amp; Smart Lookup:
+              <Search className="w-3.5 h-3.5 text-emerald-400" />
+              Pre-Approved Visitor Lookup:
             </span>
-            <span className="text-[10px] text-slate-500">Scan badge or search phone/ID</span>
+            <span className="text-[10px] text-slate-500">Search by contact, National ID, or Passport</span>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
@@ -490,8 +483,8 @@ export const GateScannerView: React.FC = () => {
                 value={lookupQuery}
                 onChange={(e) => setLookupQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSmartLookup()}
-                placeholder="Scan QR or enter Phone / ID / Passport..."
-                className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs outline-none focus:border-emerald-500"
+                placeholder="Enter Phone / National ID / Passport..."
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs outline-none focus:border-emerald-500 font-mono placeholder:font-sans placeholder:text-slate-500"
               />
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
             </div>
@@ -500,68 +493,37 @@ export const GateScannerView: React.FC = () => {
               type="button"
               onClick={() => handleSmartLookup()}
               disabled={isLookingUp}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
             >
               {isLookingUp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Lookup'}
             </button>
-
-            {registeredVisitors[0] && (
-              <button
-                type="button"
-                onClick={() => handleSimulateQrScan(registeredVisitors[0])}
-                className="px-3.5 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                Simulate Camera QR Scan
-              </button>
-            )}
           </div>
 
-          {/* Quick Scenario Fill Badges */}
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {registeredVisitors.slice(0, 2).map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => applyVisitorToForm(v, false)}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-950 hover:text-emerald-300 hover:border-emerald-500 text-slate-300 border border-slate-700 text-xs font-medium transition flex items-center gap-1"
-              >
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                {v.fullName} ({v.idType === 'PASSPORT' ? 'Passport' : 'ID'})
-              </button>
-            ))}
-
-            <button
-              type="button"
-              onClick={handleSimulateAsfBreach}
-              className="px-2.5 py-1 rounded-lg bg-rose-950/50 hover:bg-rose-900/70 text-rose-300 border border-rose-800/60 text-xs font-medium transition flex items-center gap-1"
+          {lookupFeedback && (
+            <div
+              className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                lookupFeedback.isSuccess
+                  ? 'bg-emerald-950/80 border border-emerald-700 text-emerald-300'
+                  : 'bg-amber-950/80 border border-amber-700 text-amber-300'
+              }`}
             >
-              <AlertOctagon className="w-3 h-3 text-rose-400" />
-              Simulate ASF Quarantine Breach (Fail)
-            </button>
-          </div>
+              {lookupFeedback.isSuccess ? (
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <AlertOctagon className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>{lookupFeedback.message}</span>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Simulated Scanner Scanner Reticle Modal */}
-      {isQrScannerActive && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-emerald-500 rounded-2xl p-6 flex flex-col items-center text-center space-y-3 max-w-sm">
-            <div className="w-24 h-24 border-2 border-dashed border-emerald-400 rounded-2xl animate-pulse flex items-center justify-center">
-              <QrCode className="w-12 h-12 text-emerald-400" />
-            </div>
-            <div className="text-white font-bold text-sm">Decoding Optical QR Code...</div>
-            <p className="text-xs text-slate-400">Pre-populating visitor credentials from Colcom Registry</p>
-          </div>
-        </div>
-      )}
 
       {/* Validation Errors Box */}
       {validationErrors.length > 0 && (
         <div className="bg-rose-950/70 border border-rose-600/70 rounded-xl p-3.5 text-rose-200 text-xs space-y-1">
           <div className="font-bold flex items-center gap-1.5 text-rose-300">
             <AlertOctagon className="w-4 h-4" />
-            Mandatory Criteria Errors:
+            Mandatory Criteria Validation Errors:
           </div>
           <ul className="list-disc pl-5 space-y-0.5">
             {validationErrors.map((err, i) => (
@@ -571,63 +533,50 @@ export const GateScannerView: React.FC = () => {
         </div>
       )}
 
-      {/* Main Gate Entry Form */}
+      {/* Smart Pre-filled Entry Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Section 1: Identity & Credentials (National ID vs Passport, Country of Origin) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xl">
-          <div className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
-            <UserCheck className="w-4 h-4" />
-            Section 1: Visitor Identity &amp; Travel Credentials
+        {/* SECTION 1: VISITOR IDENTIFICATION */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2.5">
+            <UserCheck className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+              1. Identity Verification Parameters (Mandatory)
+            </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Visitor Full Legal Name <span className="text-rose-400">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={visitorName}
-                onChange={(e) => setVisitorName(e.target.value)}
-                placeholder="e.g. Farai Matthews"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:border-emerald-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Visitor Contact Number (Digits only, min 10) <span className="text-rose-400">*</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            {/* Full Name */}
+            <div className="sm:col-span-2">
+              <label className="block text-slate-300 font-semibold mb-1">
+                Visitor Full Name <span className="text-rose-400">*</span>
               </label>
               <div className="relative">
                 <input
-                  type="tel"
+                  type="text"
                   required
-                  value={visitorContactNumber}
-                  onChange={(e) => setVisitorContactNumber(e.target.value)}
-                  placeholder="e.g. 263773466252"
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm font-mono focus:border-emerald-500 outline-none"
+                  value={visitorName}
+                  onChange={(e) => setVisitorName(e.target.value)}
+                  placeholder="e.g. Tendai Chitepo"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500"
                 />
-                <Phone className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                <User className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
               </div>
             </div>
-          </div>
 
-          {/* National ID vs Passport Number Toggle & Input */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Identification Type & Number (National ID or Passport) */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-slate-300">
+                <label className="text-slate-300 font-semibold">
                   Identification Type <span className="text-rose-400">*</span>
                 </label>
-                <div className="flex items-center bg-slate-950 rounded-lg p-0.5 border border-slate-800">
+                <div className="flex rounded-lg overflow-hidden border border-slate-700 text-[10px] font-bold">
                   <button
                     type="button"
                     onClick={() => setIdType('NATIONAL_ID')}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+                    className={`px-2 py-0.5 transition ${
                       idType === 'NATIONAL_ID'
                         ? 'bg-emerald-600 text-white'
-                        : 'text-slate-400 hover:text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
                     National ID
@@ -635,10 +584,10 @@ export const GateScannerView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIdType('PASSPORT')}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+                    className={`px-2 py-0.5 transition ${
                       idType === 'PASSPORT'
                         ? 'bg-emerald-600 text-white'
-                        : 'text-slate-400 hover:text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
                     Passport
@@ -651,24 +600,24 @@ export const GateScannerView: React.FC = () => {
                   type="text"
                   required
                   value={idNumber}
-                  onChange={(e) => setIdNumber(e.target.value.toUpperCase())}
-                  placeholder={idType === 'NATIONAL_ID' ? 'e.g. 63-289471-K-42' : 'e.g. E92049182'}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm font-mono uppercase focus:border-emerald-500 outline-none"
+                  onChange={(e) => setIdNumber(e.target.value)}
+                  placeholder={idType === 'PASSPORT' ? 'e.g. FN1928371' : 'e.g. 63-289471-K-42'}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 font-mono"
                 />
-                <CreditCard className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                <CreditCard className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
               </div>
             </div>
 
             {/* Country of Origin (Mandatory) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Country of Origin / Nationality <span className="text-rose-400">*</span>
+              <label className="block text-slate-300 font-semibold mb-1">
+                Country of Origin <span className="text-rose-400">*</span>
               </label>
               <div className="relative">
                 <select
                   value={countryOfOrigin}
                   onChange={(e) => setCountryOfOrigin(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:border-emerald-500 outline-none appearance-none"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 appearance-none"
                 >
                   {POPULAR_COUNTRIES.map((country) => (
                     <option key={country} value={country}>
@@ -676,31 +625,53 @@ export const GateScannerView: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                <Globe2 className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                <Globe2 className="w-4 h-4 text-slate-500 absolute left-3 top-2.5 pointer-events-none" />
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Visitor Contact Number (Numbers only, min length 10) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Vehicle Registration Number (Optional, min 3)
+              <label className="block text-slate-300 font-semibold mb-1">
+                Visitor Contact Number <span className="text-rose-400">* (Numbers only, min 10)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="tel"
+                  required
+                  value={visitorContactNumber}
+                  onChange={(e) => {
+                    // Restrict strictly to numbers
+                    const val = e.target.value.replace(/\D/g, '');
+                    setVisitorContactNumber(val);
+                  }}
+                  placeholder="e.g. 263773466252"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 font-mono"
+                />
+                <Phone className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+              </div>
+            </div>
+
+            {/* Vehicle Registration Number (Optional, min length 3) */}
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">
+                Vehicle Registration Number <span className="text-slate-500">(Optional, min 3 chars)</span>
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={vehicleRegNumber}
                   onChange={(e) => setVehicleRegNumber(e.target.value.toUpperCase())}
-                  placeholder="e.g. AFE-8492"
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm uppercase font-mono focus:border-emerald-500 outline-none"
+                  placeholder="e.g. AFE-4921 (Optional)"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 font-mono"
                 />
-                <Truck className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                <Truck className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                From (Place / Organization) <span className="text-rose-400">*</span>
+            {/* From (Place / Organization) - Min length 3 */}
+            <div className="sm:col-span-2">
+              <label className="block text-slate-300 font-semibold mb-1">
+                From (Place / Organization) <span className="text-rose-400">* (Min 3 chars)</span>
               </label>
               <div className="relative">
                 <input
@@ -708,188 +679,255 @@ export const GateScannerView: React.FC = () => {
                   required
                   value={fromOrigin}
                   onChange={(e) => setFromOrigin(e.target.value)}
-                  placeholder="e.g. AgriCold Ref., Beatrice Kraal"
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:border-emerald-500 outline-none"
+                  placeholder="e.g. Colcom Chilled Logistics / Harare Depot"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500"
                 />
-                <MapPin className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                <Building className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
               </div>
             </div>
-          </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-semibold text-slate-300">
-                Purpose Of Visit (Max 3500 chars) <span className="text-rose-400">*</span>
-              </label>
-              <span className="text-[10px] text-slate-500 font-mono">
-                {purposeOfVisit.length}/3500
-              </span>
+            {/* Purpose Of Visit (Textarea, max length 3500) */}
+            <div className="sm:col-span-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-300 font-semibold">
+                  Purpose Of Visit <span className="text-rose-400">* (Max 3500 chars)</span>
+                </label>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {purposeOfVisit.length} / 3500
+                </span>
+              </div>
+              <textarea
+                required
+                rows={2}
+                maxLength={3500}
+                value={purposeOfVisit}
+                onChange={(e) => setPurposeOfVisit(e.target.value)}
+                placeholder="State specific purpose, host contact, and destination piggery block..."
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 text-xs"
+              />
             </div>
-            <textarea
-              required
-              rows={2}
-              maxLength={3500}
-              value={purposeOfVisit}
-              onChange={(e) => setPurposeOfVisit(e.target.value)}
-              placeholder="State destination unit within Triple C Pigs..."
-              className="w-full px-3.5 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:border-emerald-500 outline-none resize-none"
-            />
           </div>
         </div>
 
-        {/* Section 2: Dynamic Form Engine (Configured by Admin / Baseline Questions) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xl">
-          <div className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center justify-between border-b border-slate-800 pb-2">
-            <div className="flex items-center gap-1.5">
-              <AlertOctagon className="w-4 h-4 text-amber-400" />
-              Section 2: Biosecurity Declarations &amp; Protocol Questions
+        {/* SECTION 2: DYNAMIC BIOSECURITY DECLARATION */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-400" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                2. African Swine Fever &amp; FMD Biosecurity Declaration
+              </h2>
             </div>
-            <span className="text-[10px] text-slate-400 font-normal">
-              {questions.filter((q) => q.type !== 'SIGNATURE').length} active dynamic checks
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+              {questions.length} QUESTIONS
             </span>
           </div>
 
-          {questions
-            .filter((q) => q.type !== 'SIGNATURE')
-            .map((q) => {
-              const currentVal = dynamicAnswers[q.id];
-              const isBoolean = q.type === 'BOOLEAN';
+          <div className="space-y-3">
+            {questions.map((q) => {
+              if (q.type === 'BOOLEAN') {
+                const currentAnswer = Boolean(dynamicAnswers[q.id]);
+                const isAlertTriggered =
+                  (q.triggerRedAlertOn === 'TRUE' && currentAnswer === true) ||
+                  (q.triggerRedAlertOn === 'FALSE' && currentAnswer === false);
 
-              // Check if current answer triggers RED alert
-              let isTriggeringRed = false;
-              if (isBoolean) {
-                const boolVal = Boolean(currentVal);
-                if (q.triggerRedAlertOn === 'TRUE' && boolVal === true) isTriggeringRed = true;
-                if (q.triggerRedAlertOn === 'FALSE' && boolVal === false) isTriggeringRed = true;
-              }
-
-              return (
-                <div
-                  key={q.id}
-                  className={`p-3.5 rounded-xl border transition ${
-                    isTriggeringRed
-                      ? 'bg-rose-950/50 border-rose-600/70 text-rose-200'
-                      : 'bg-slate-950/70 border-slate-800 text-slate-200'
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                    <div className="space-y-0.5 max-w-lg">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-white">
-                          {q.prompt}
+                return (
+                  <div
+                    key={q.id}
+                    className={`p-3.5 rounded-xl border transition ${
+                      isAlertTriggered
+                        ? 'bg-rose-950/40 border-rose-600/60'
+                        : 'bg-slate-950 border-slate-800'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="space-y-0.5 flex-1 pr-2">
+                        <span className="text-xs font-semibold text-white block">
+                          {q.order}. {q.prompt}
                         </span>
-                        {q.required && <span className="text-rose-400 text-xs">*</span>}
-                        {q.isBaseline && (
-                          <span className="text-[9px] bg-slate-800 text-amber-300 px-1.5 py-0.2 rounded font-mono">
-                            BASELINE RULE
+                        {isAlertTriggered && (
+                          <span className="text-[11px] text-rose-400 font-bold flex items-center gap-1">
+                            <AlertOctagon className="w-3.5 h-3.5" />
+                            {q.failureMessage}
                           </span>
                         )}
                       </div>
-                      {isTriggeringRed && (
-                        <div className="text-[11px] text-rose-400 font-medium">
-                          ⚠ {q.failureMessage}
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Boolean Controls */}
-                    {isBoolean && (
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() => setDynamicAnswers((prev) => ({ ...prev, [q.id]: false }))}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                            currentVal === false
-                              ? q.triggerRedAlertOn === 'FALSE'
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-emerald-600 text-white'
-                              : 'bg-slate-800 text-slate-400'
-                          }`}
-                        >
-                          NO
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDynamicAnswers((prev) => ({ ...prev, [q.id]: true }))}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                            currentVal === true
+                          onClick={() => setDynamicAnswers({ ...dynamicAnswers, [q.id]: true })}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                            currentAnswer === true
                               ? q.triggerRedAlertOn === 'TRUE'
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-emerald-600 text-white'
-                              : 'bg-slate-800 text-slate-400'
+                                ? 'bg-rose-600 text-white shadow'
+                                : 'bg-emerald-600 text-white shadow'
+                              : 'bg-slate-800 text-slate-400 hover:text-white'
                           }`}
                         >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
                           YES
                         </button>
-                      </div>
-                    )}
 
-                    {/* Text Field */}
-                    {q.type === 'TEXT' && (
-                      <input
-                        type="text"
-                        value={(currentVal as string) || ''}
-                        onChange={(e) =>
-                          setDynamicAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))
-                        }
-                        placeholder="Enter response..."
-                        className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white outline-none focus:border-emerald-500 w-full sm:w-48"
-                      />
-                    )}
+                        <button
+                          type="button"
+                          onClick={() => setDynamicAnswers({ ...dynamicAnswers, [q.id]: false })}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                            currentAnswer === false
+                              ? q.triggerRedAlertOn === 'FALSE'
+                                ? 'bg-rose-600 text-white shadow'
+                                : 'bg-slate-700 text-white'
+                              : 'bg-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          NO
+                        </button>
+                      </div>
+                    </div>
                   </div>
+                );
+              }
+
+              if (q.type === 'SIGNATURE') {
+                return null;
+              }
+
+              return (
+                <div key={q.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                  <label className="block text-xs font-semibold text-white">
+                    {q.order}. {q.prompt} {q.required && <span className="text-rose-400">*</span>}
+                  </label>
+                  <input
+                    type="text"
+                    value={String(dynamicAnswers[q.id] || '')}
+                    onChange={(e) => setDynamicAnswers({ ...dynamicAnswers, [q.id]: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-emerald-500"
+                  />
                 </div>
               );
             })}
+          </div>
         </div>
 
-        {/* Section 3: Biometric Capture & Digital Signature */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
-          <div className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 border-b border-slate-800 pb-2">
-            <QrCode className="w-4 h-4" />
-            Section 3: Facial Biometrics (pgvector) &amp; Digital Signature
+        {/* SECTION 3: OPTIONAL PHOTO / BIOMETRIC CAPTURE & DIGITAL SIGNATURE */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Camera className="w-4 h-4 text-emerald-400" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                3. Optional Photo Capture &amp; Digital Legal Declaration
+              </h2>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+              PHOTO OPTIONAL
+            </span>
           </div>
 
-          <BiometricCapturePad
-            onCapture={(photo, embedding) => {
-              setCapturedPhoto(photo);
-              setCapturedEmbedding(embedding);
-            }}
-            selectedVisitor={selectedVisitor}
-            forcePassBiometric={true}
-          />
+          {/* Optional Photo Capture Toggle */}
+          <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-white block">
+                  Visitor Photo / Biometric Capture (Optional)
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Captures facial photo for gate security audit and badge printing.
+                </span>
+              </div>
 
-          <DigitalSignaturePad
-            onSignatureChange={(sig) => setDigitalSignature(sig)}
-            required
-          />
+              <button
+                type="button"
+                onClick={() => setShowPhotoCapture(!showPhotoCapture)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  showPhotoCapture
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5" />
+                {showPhotoCapture ? 'Hide Camera' : 'Capture Photo'}
+              </button>
+            </div>
+
+            {capturedPhoto && !showPhotoCapture && (
+              <div className="flex items-center gap-3 pt-2">
+                <img
+                  src={capturedPhoto}
+                  alt="Visitor Photo"
+                  className="w-12 h-12 object-cover rounded-xl border border-emerald-500 shadow"
+                />
+                <div>
+                  <span className="text-xs font-bold text-emerald-400 block">
+                    Photo Attached to Entry Record
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCapturedPhoto('');
+                      setCapturedEmbedding(undefined);
+                    }}
+                    className="text-[11px] text-rose-400 hover:underline"
+                  >
+                    Remove Photo
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {showPhotoCapture && (
+              <div className="pt-2">
+                <BiometricCapturePad
+                  visitorName={visitorName}
+                  onCapture={(photo, embedding) => {
+                    setCapturedPhoto(photo);
+                    setCapturedEmbedding(embedding);
+                    setShowPhotoCapture(false);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Mandatory Digital Signature */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-200">
+              Mandatory Legal Biosecurity Declaration Signature <span className="text-rose-400">*</span>
+            </label>
+            <p className="text-[11px] text-slate-400">
+              Visitor hereby certifies under penalties of law that all biosecurity declarations regarding cloven-hoofed animal contact and meat contraband are accurate.
+            </p>
+            <DigitalSignaturePad onSignatureChange={setDigitalSignature} />
+          </div>
         </div>
 
-        {/* Big Submit Button */}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full py-4 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-base uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-950/60 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-        >
-          {isSubmitting ? (
-            <>
-              <RefreshCw className="w-5 h-5 animate-spin" />
-              Evaluating Access in PostgreSQL Decision Engine...
-            </>
-          ) : (
-            <>
-              <Send className="w-5 h-5" />
-              Evaluate Gate Access (Decision Engine)
-            </>
-          )}
-        </button>
+        {/* SUBMIT BUTTON */}
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-sm tracking-wide transition shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-2 disabled:bg-slate-800 disabled:text-slate-500"
+          >
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="w-5 h-5 animate-spin" />
+                EVALUATING GATE BIOSECURITY DECISION...
+              </>
+            ) : (
+              <>
+                <Shield className="w-5 h-5" />
+                SUBMIT GATE EVALUATION &amp; REQUEST ENTRY DECISION
+              </>
+            )}
+          </button>
+        </div>
       </form>
 
-      {/* Full-Screen Pop-Up Modal */}
+      {/* POP-UP MODAL: ACCESS DECISION (GREEN / RED FULL SCREEN OVERLAY) */}
       <AccessDecisionModal
-        decision={decisionResult}
         isOpen={isModalOpen}
+        decision={decisionResult}
         onClose={handleResetForm}
-        visitorPhoto={capturedPhoto}
       />
     </div>
   );

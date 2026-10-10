@@ -123,7 +123,12 @@ export const ReportEmailConfigView: React.FC = () => {
   };
 
   const handleDownloadPdf = () => {
-    window.open('/api/reports/eod-pdf', '_blank');
+    const link = document.createElement('a');
+    link.href = '/api/reports/eod-pdf';
+    link.download = `colcom_eod_biosecurity_report_${new Date().toISOString().slice(0, 10)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (!config) {

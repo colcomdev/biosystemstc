@@ -1,7 +1,8 @@
 /**
  * End-of-Day (EOD) Biosecurity Audit PDF Report Generator
- * Triple C Pigs t/a Colcom Foods (Innscor Africa Group)
- * Generates formatted PDF reports with daily telemetry, denial breakdowns, and gate audit logs.
+ * INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+ * Generates formatted PDF reports with daily telemetry, denial breakdowns, gate audit logs,
+ * and corporate logo branding.
  */
 
 import { jsPDF } from 'jspdf';
@@ -10,7 +11,8 @@ import { GateLogRecord, TelemetryStats } from '../types';
 export function generateEodPdfReport(
   stats: TelemetryStats,
   logs: GateLogRecord[],
-  reportDate = new Date().toLocaleDateString('en-GB')
+  reportDate = new Date().toLocaleDateString('en-GB'),
+  logoBase64?: string | null
 ): Uint8Array {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -19,34 +21,57 @@ export function generateEodPdfReport(
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let currentY = 18;
+  let currentY = 16;
 
   // Header Banner Background
   doc.setFillColor(15, 23, 42); // slate-900
-  doc.rect(0, 0, pageWidth, 32, 'F');
+  doc.rect(0, 0, pageWidth, 36, 'F');
 
   // Title & Branding
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(14);
   doc.setTextColor(255, 255, 255);
-  doc.text('TRIPLE C PIGS t/a COLCOM FOODS', 14, currentY);
+  doc.text('INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS', 14, currentY);
 
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(52, 211, 153); // emerald-400
-  doc.text('INNSCOR AFRICA GROUP • BIOSECURITY & GATE ACCESS DAILY REPORT', 14, currentY + 6);
+  doc.text('AFRICAN SWINE FEVER & FMD BIOSECURITY COMPLIANCE AUDIT REPORT', 14, currentY + 6);
 
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184); // slate-400
-  doc.text(`Generated: ${new Date().toLocaleString()} | Gate: MAIN_BIOSECURITY_GATE_01`, 14, currentY + 11);
+  doc.text(`Generated: ${new Date().toLocaleString()} | Facility Gate Post: MAIN_BIOSECURITY_GATE_01`, 14, currentY + 11);
+  doc.text(`Official Corporate Entity: INNSCOR AFRICA GROUP`, 14, currentY + 15);
 
-  currentY = 40;
+  // If corporate logo is provided, embed in top right
+  if (logoBase64 && logoBase64.startsWith('data:image')) {
+    try {
+      doc.addImage(logoBase64, 'PNG', pageWidth - 40, 5, 26, 24);
+    } catch {
+      // Fallback text badge if image format parsing fails
+      doc.setFillColor(30, 41, 59);
+      doc.roundedRect(pageWidth - 36, 8, 22, 18, 2, 2, 'F');
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(52, 211, 153);
+      doc.text('3C PIGS', pageWidth - 34, 18);
+    }
+  } else {
+    doc.setFillColor(30, 41, 59);
+    doc.roundedRect(pageWidth - 36, 8, 22, 18, 2, 2, 'F');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(52, 211, 153);
+    doc.text('3C PIGS', pageWidth - 34, 18);
+  }
+
+  currentY = 44;
 
   // Executive Summary Box
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(`DAILY BIOSECURITY SUMMARY (${reportDate})`, 14, currentY);
+  doc.text(`DAILY BIOSECURITY GATE TELEMETRY (${reportDate})`, 14, currentY);
 
   currentY += 5;
 
@@ -60,7 +85,7 @@ export function generateEodPdfReport(
   doc.setFontSize(7);
   doc.setTextColor(100, 116, 139);
   doc.text('TOTAL ATTEMPTS', 18, currentY + 5);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   doc.text(String(stats.todayTotalAttempts), 18, currentY + 14);
@@ -72,7 +97,7 @@ export function generateEodPdfReport(
   doc.setFontSize(7);
   doc.setTextColor(5, 150, 105);
   doc.text('PASSED / GRANTED', kpi2X + 4, currentY + 5);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(4, 120, 87);
   doc.text(String(stats.todayGranted), kpi2X + 4, currentY + 14);
 
@@ -83,7 +108,7 @@ export function generateEodPdfReport(
   doc.setFontSize(7);
   doc.setTextColor(225, 29, 72);
   doc.text('DENIED / REFUSED', kpi3X + 4, currentY + 5);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(190, 18, 60);
   doc.text(String(stats.todayDenied), kpi3X + 4, currentY + 14);
 
@@ -94,17 +119,17 @@ export function generateEodPdfReport(
   doc.setFontSize(7);
   doc.setTextColor(180, 83, 9);
   doc.text('ASF QUARANTINE', kpi4X + 4, currentY + 5);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(180, 83, 9);
   doc.text(String(stats.quarantineAlertsCount), kpi4X + 4, currentY + 14);
 
-  currentY += kpiHeight + 10;
+  currentY += kpiHeight + 9;
 
-  // Section 2: Denied Entries Breakdown (Crucial for Veterinary Audits)
+  // Section 2: Denied Entries Breakdown
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(190, 18, 60);
-  doc.text('CRITICAL QUARANTINE & REFUSAL INCIDENTS', 14, currentY);
+  doc.text('CRITICAL QUARANTINE & ENTRY REFUSAL LOGS', 14, currentY);
 
   currentY += 4;
   const deniedLogs = logs.filter((l) => l.status === 'DENIED');
@@ -114,7 +139,7 @@ export function generateEodPdfReport(
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
     doc.text('Zero biosecurity breaches or denied entries recorded for this reporting period.', 14, currentY + 4);
-    currentY += 10;
+    currentY += 9;
   } else {
     deniedLogs.forEach((log) => {
       if (currentY > 250) {
@@ -128,7 +153,7 @@ export function generateEodPdfReport(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(159, 18, 57);
-      doc.text(`${log.visitorName} (${log.idType}: ${log.idNumber}) - From: ${log.origin}`, 17, currentY + 4.5);
+      doc.text(`${log.visitorName} (${log.idType}: ${log.idNumber}) - Origin: ${log.origin}`, 17, currentY + 4.5);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
@@ -142,13 +167,13 @@ export function generateEodPdfReport(
     });
   }
 
-  currentY += 4;
+  currentY += 3;
 
   // Section 3: Gate Access Log Registry Table
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
-  doc.text('COMPLETE GATE TRAFFIC AUDIT LOG', 14, currentY);
+  doc.text('GATE ACCESS REGISTRY & VISITOR AUDIT TRAIL', 14, currentY);
 
   currentY += 5;
 
@@ -201,18 +226,16 @@ export function generateEodPdfReport(
       doc.text('QUARANTINE', 165, currentY + 4);
     }
 
-    // Divider line
     doc.setDrawColor(226, 232, 240);
     doc.line(14, currentY + 5.5, pageWidth - 14, currentY + 5.5);
 
     currentY += 6;
   });
 
-  // Footer & Legal Sign-off
   const pageHeight = doc.internal.pageSize.getHeight();
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  doc.text('CONFIDENTIAL • TRIPLE C PIGS BIOSECURITY COMPLIANCE AUDIT • INNSCOR AFRICA GROUP', 14, pageHeight - 8);
+  doc.text('CONFIDENTIAL • INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS • BIOSECURITY COMPLIANCE AUDIT', 14, pageHeight - 8);
   doc.text(`Page 1 of 1`, pageWidth - 28, pageHeight - 8);
 
   const arrayBuffer = doc.output('arraybuffer');

@@ -1,6 +1,6 @@
 {
-  "name": "Colcom Biosecurity Access & Gate Decision System",
-  "description": "Automated biometric visitor management, African Swine Fever & FMD biosecurity gate decision engine, and real-time security operations center for Triple C Pigs t/a Colcom Foods.",
+  "name": "INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS",
+  "description": "Mobile Biometric Visitor Management & Biosecurity Gate Decision System for INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

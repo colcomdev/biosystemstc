@@ -53,11 +53,15 @@ interface AdminDashboardProps {
   onSwitchRole: (user: User) => void;
   systemUsers: User[];
   onExitAdmin: () => void;
+  logoUrl?: string | null;
+  onLogoChange?: (url: string | null) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser,
   onExitAdmin,
+  logoUrl,
+  onLogoChange,
 }) => {
   // Authentication & MFA State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -332,14 +336,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return (
       <div className="w-full max-w-md mx-auto my-12 bg-slate-900 border border-slate-700/80 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-5 animate-in fade-in">
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 bg-emerald-950/80 border border-emerald-500/50 rounded-2xl flex items-center justify-center text-emerald-400 mx-auto shadow-lg shadow-emerald-950/50">
-            <Lock className="w-7 h-7" />
-          </div>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Corporate Logo"
+              className="h-14 max-w-[160px] object-contain rounded-xl p-1 bg-white/10 border border-slate-700 mx-auto shadow-lg"
+            />
+          ) : (
+            <div className="w-14 h-14 bg-emerald-950/80 border border-emerald-500/50 rounded-2xl flex items-center justify-center text-emerald-400 mx-auto shadow-lg shadow-emerald-950/50">
+              <Lock className="w-7 h-7" />
+            </div>
+          )}
           <h2 className="text-xl font-black text-white tracking-tight">
             Security &amp; Biosecurity Portal
           </h2>
           <p className="text-xs text-slate-400">
-            Triple C Pigs t/a Colcom Foods • Administrative Surface
+            INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS • Administrative Surface
           </p>
         </div>
 
@@ -748,10 +760,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                     <div className="text-[11px] text-slate-400 flex items-center gap-3 pt-1">
                       <span className="flex items-center gap-1 text-emerald-400">
-                        <Check className="w-3 h-3" /> SMS Delivered to Chief Vet Officer
+                        <Check className="w-3 h-3" /> Real-Time Email Fired to Triple C SOC
                       </span>
                       <span className="flex items-center gap-1 text-emerald-400">
-                        <Check className="w-3 h-3" /> Webhook Fired to Colcom SOC
+                        <Check className="w-3 h-3" /> Webhook Fired to Triple C SOC
                       </span>
                     </div>
                   </div>
@@ -974,7 +986,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'email_reports' && <ReportEmailConfigView />}
 
       {/* TAB 6: System Settings & Toggleable MFA */}
-      {activeTab === 'settings' && <SystemSettingsView />}
+      {activeTab === 'settings' && <SystemSettingsView onLogoUpdated={onLogoChange} />}
 
       {/* Modals */}
       <PostgresArchitectureModal
