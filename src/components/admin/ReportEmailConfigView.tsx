@@ -19,6 +19,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { EmailConfig, EmailDispatchLog } from '../../types';
+import { apiUrl } from '../../lib/api';
 
 export const ReportEmailConfigView: React.FC = () => {
   const [config, setConfig] = useState<EmailConfig | null>(null);
@@ -36,7 +37,7 @@ export const ReportEmailConfigView: React.FC = () => {
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch('/api/email-config');
+      const res = await fetch(apiUrl('/api/email-config'));
       if (res.ok) {
         setConfig(await res.json());
       }
@@ -47,7 +48,7 @@ export const ReportEmailConfigView: React.FC = () => {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch('/api/email-logs');
+      const res = await fetch(apiUrl('/api/email-logs'));
       if (res.ok) {
         setEmailLogs(await res.json());
       }
@@ -85,7 +86,7 @@ export const ReportEmailConfigView: React.FC = () => {
     setSaveSuccess(false);
 
     try {
-      const res = await fetch('/api/email-config', {
+      const res = await fetch(apiUrl('/api/email-config'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -107,7 +108,7 @@ export const ReportEmailConfigView: React.FC = () => {
     setEodSuccessMsg(null);
 
     try {
-      const res = await fetch('/api/reports/trigger-eod', { method: 'POST' });
+      const res = await fetch(apiUrl('/api/reports/trigger-eod'), { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setEodSuccessMsg(data.message || 'EOD PDF report dispatched successfully!');
@@ -124,7 +125,7 @@ export const ReportEmailConfigView: React.FC = () => {
 
   const handleDownloadPdf = () => {
     const link = document.createElement('a');
-    link.href = '/api/reports/eod-pdf';
+    link.href = apiUrl('/api/reports/eod-pdf');
     link.download = `colcom_eod_biosecurity_report_${new Date().toISOString().slice(0, 10)}.pdf`;
     document.body.appendChild(link);
     link.click();

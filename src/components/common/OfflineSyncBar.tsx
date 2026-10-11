@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle2, AlertCircle, CloudUpload, WifiOff } from 'lucide-react';
 import { getOfflineQueue, clearOfflineQueue, QueuedSubmission } from '../../lib/offline-storage';
+import { apiUrl } from '../../lib/api';
 
 interface OfflineSyncBarProps {
   onSyncComplete?: () => void;
@@ -33,7 +34,7 @@ export const OfflineSyncBar: React.FC<OfflineSyncBarProps> = ({ onSyncComplete }
 
     try {
       const payloadBatch = queuedItems.map((q) => q.payload);
-      const res = await fetch('/api/sync/offline-batch', {
+      const res = await fetch(apiUrl('/api/sync/offline-batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: payloadBatch }),

@@ -49,6 +49,7 @@ import {
   IdentificationType,
 } from '../../types';
 import { DigitalSignaturePad } from './DigitalSignaturePad';
+import { apiUrl } from '../../lib/api';
 
 const POPULAR_COUNTRIES = [
   'Zimbabwe',
@@ -114,7 +115,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
 
   const fetchActiveQuestions = async () => {
     try {
-      const res = await fetch('/api/form-questions?activeOnly=true');
+      const res = await fetch(apiUrl('/api/form-questions?activeOnly=true'));
       if (res.ok) {
         const data: DynamicFormQuestion[] = await res.json();
         setQuestions(data);
@@ -143,7 +144,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
     setIsLookingUp(true);
     setLookupNotice(null);
     try {
-      const res = await fetch(`/api/visitors/lookup?q=${encodeURIComponent(query)}`);
+      const res = await fetch(apiUrl(`/api/visitors/lookup?q=${encodeURIComponent(query)}`));
       if (res.ok) {
         const data = await res.json();
         if (data.found && data.visitor) {
@@ -243,7 +244,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
     };
 
     try {
-      const res = await fetch('/api/gate/evaluate-access', {
+      const res = await fetch(apiUrl('/api/gate/evaluate-access'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

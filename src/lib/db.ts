@@ -34,10 +34,11 @@ let dbPool: pg.Pool | null = null;
 let isConnected = false;
 
 export function getDbConfig(): DbConfig {
-  // Check if DATABASE_URL is provided
-  if (process.env.DATABASE_URL) {
+  // Check if DATABASE_URL or DIRECT_URL is provided
+  const connString = process.env.DATABASE_URL || process.env.DIRECT_URL;
+  if (connString) {
     try {
-      const url = new URL(process.env.DATABASE_URL);
+      const url = new URL(connString);
       return {
         host: url.hostname || 'localhost',
         port: Number(url.port) || 5432,
@@ -63,70 +64,125 @@ export function isDbConnected(): boolean {
   return isConnected && dbPool !== null;
 }
 
+export function isSslRequired(): boolean {
+  if (process.env.DB_SSL === 'true') return true;
+  if (process.env.DB_SSL === 'false') return false;
+  const connString = process.env.DATABASE_URL || process.env.DIRECT_URL;
+  if (connString) {
+    const lower = connString.toLowerCase();
+    if (
+      lower.includes('sslmode=require') ||
+      lower.includes('ssl=true') ||
+      lower.includes('neon.tech') ||
+      lower.includes('supabase.co') ||
+      lower.includes('supabase.com') ||
+      lower.includes('pooler.supabase.com') ||
+      lower.includes('render.com') ||
+      lower.includes('aivencloud.com')
+    ) {
+      return true;
+    }
+  }
+  const config = getDbConfig();
+  if (config.host && config.host !== 'localhost' && config.host !== '127.0.0.1' && config.host !== '0.0.0.0') {
+    return true;
+  }
+  return false;
+}
+
 export function getPool(): pg.Pool | null {
   return dbPool;
 }
 
 /**
  * Initializes the PostgreSQL Database:
- * 1. Connects to server maintenance db ('postgres')
+ * 1. Connects to server maintenance db ('postgres') if using local/self-hosted Postgres
  * 2. Creates the target database if it doesn't already exist
- * 3. Connects to target database
+ * 3. Connects to target database (with SSL auto-detection for hosted DBs like Neon/Supabase)
  * 4. Creates all required tables, triggers, and indexes if not exists
  * Clean schema initialization: Does NOT seed any mock or dummy data.
  */
 export async function initDatabase(): Promise<boolean> {
   const config = getDbConfig();
-  console.log(`[DB] Initializing PostgreSQL connection: host=${config.host}, port=${config.port}, user=${config.user}, db=${config.database}...`);
+  const ssl = isSslRequired() ? { rejectUnauthorized: false } : undefined;
+  console.log(`[DB] Initializing PostgreSQL: host=${config.host}, port=${config.port}, user=${config.user}, db=${config.database}, ssl=${Boolean(ssl)}...`);
 
-  // Step 1: Connect to maintenance db to ensure target database exists
-  try {
-    const maintenanceClient = new Client({
-      host: config.host,
-      port: config.port,
-      user: config.user,
-      password: config.password,
-      database: 'postgres',
-      connectionTimeoutMillis: 4000,
-    });
+  // Step 1: For self-hosted/local Postgres, ensure target database exists
+  // On cloud DBs (Neon, Supabase, Render), database is already provisioned by provider
+  const connString = process.env.DATABASE_URL || process.env.DIRECT_URL;
+  const isCloudProvider = Boolean(
+    (connString &&
+      (connString.includes('neon.tech') ||
+        connString.includes('supabase.co') ||
+        connString.includes('supabase.com') ||
+        connString.includes('pooler.supabase.com') ||
+        connString.includes('render.com') ||
+        connString.includes('aivencloud.com'))) ||
+      config.host.includes('supabase.co') ||
+      config.host.includes('supabase.com') ||
+      config.host.includes('pooler.supabase.com') ||
+      config.host.includes('neon.tech')
+  );
 
-    await maintenanceClient.connect();
-    
-    // Check if target database exists
-    const checkDbRes = await maintenanceClient.query(
-      `SELECT 1 FROM pg_database WHERE datname = $1`,
-      [config.database]
-    );
+  if (!isCloudProvider) {
+    try {
+      const maintenanceClient = new Client({
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: 'postgres',
+        ssl,
+        connectionTimeoutMillis: 4000,
+      });
 
-    if (checkDbRes.rowCount === 0) {
-      console.log(`[DB] Database "${config.database}" does not exist. Creating database...`);
-      // Escape database name safely
-      const safeDbName = config.database.replace(/"/g, '""');
-      await maintenanceClient.query(`CREATE DATABASE "${safeDbName}";`);
-      console.log(`[DB] Successfully created database "${config.database}".`);
-    } else {
-      console.log(`[DB] Database "${config.database}" exists.`);
+      await maintenanceClient.connect();
+      
+      // Check if target database exists
+      const checkDbRes = await maintenanceClient.query(
+        `SELECT 1 FROM pg_database WHERE datname = $1`,
+        [config.database]
+      );
+
+      if (checkDbRes.rowCount === 0) {
+        console.log(`[DB] Database "${config.database}" does not exist. Creating database...`);
+        const safeDbName = config.database.replace(/"/g, '""');
+        await maintenanceClient.query(`CREATE DATABASE "${safeDbName}";`);
+        console.log(`[DB] Successfully created database "${config.database}".`);
+      } else {
+        console.log(`[DB] Database "${config.database}" exists.`);
+      }
+
+      await maintenanceClient.end();
+    } catch (err) {
+      const errorMsg = (err as Error).message;
+      console.warn(`[DB] Notice: Could not connect to maintenance db to verify/create database: ${errorMsg}`);
     }
-
-    await maintenanceClient.end();
-  } catch (err) {
-    const errorMsg = (err as Error).message;
-    console.warn(`[DB] Notice: Could not connect to maintenance db to verify/create database: ${errorMsg}`);
-    // We continue attempting to connect directly in case user has restricted access or database already exists
   }
 
   // Step 2: Connect to the target database
   try {
-    const pool = new Pool({
-      host: config.host,
-      port: config.port,
-      user: config.user,
-      password: config.password,
-      database: config.database,
-      max: 15,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
+    const poolConfig: pg.PoolConfig = connString
+      ? {
+          connectionString: connString,
+          ssl,
+          max: 15,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 8000,
+        }
+      : {
+          host: config.host,
+          port: config.port,
+          user: config.user,
+          password: config.password,
+          database: config.database,
+          ssl,
+          max: 15,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 8000,
+        };
+
+    const pool = new Pool(poolConfig);
 
     // Test connection
     const client = await pool.connect();

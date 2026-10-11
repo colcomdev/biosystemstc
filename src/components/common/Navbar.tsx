@@ -12,6 +12,7 @@ import React from 'react';
 import { Shield, Lock, Smartphone, LayoutDashboard, Sun, Moon, ShieldCheck } from 'lucide-react';
 import { User } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { resolveAssetUrl } from '../../lib/api';
 
 interface NavbarProps {
   currentView: 'GATE' | 'ADMIN';
@@ -35,7 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-3">
           {logoUrl ? (
             <img
-              src={logoUrl}
+              src={resolveAssetUrl(logoUrl) || ''}
               alt="INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS"
               className="h-9 max-w-[130px] object-contain rounded-lg p-0.5 bg-white/10 border border-slate-700 shrink-0"
             />

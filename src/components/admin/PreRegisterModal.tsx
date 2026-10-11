@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { UserPlus, X, Check, Scan, Building, Phone, CreditCard, Globe2 } from 'lucide-react';
 import { IdentificationType, RegisteredVisitor } from '../../types';
+import { apiUrl } from '../../lib/api';
 
 interface PreRegisterModalProps {
   isOpen: boolean;
@@ -43,7 +44,7 @@ export const PreRegisterModal: React.FC<PreRegisterModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/visitors', {
+      const res = await fetch(apiUrl('/api/visitors'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

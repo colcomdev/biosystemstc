@@ -47,6 +47,7 @@ import { PreRegisterModal } from './PreRegisterModal';
 import { DynamicQuestionBuilder } from './DynamicQuestionBuilder';
 import { SystemSettingsView } from './SystemSettingsView';
 import { ReportEmailConfigView } from './ReportEmailConfigView';
+import { apiUrl, resolveAssetUrl } from '../../lib/api';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -108,7 +109,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     fetchVisitors();
     fetchQuestions();
 
-    const eventSource = new EventSource('/api/events');
+    const eventSource = new EventSource(apiUrl('/api/events'));
 
     eventSource.onopen = () => setSseConnected(true);
     eventSource.addEventListener('init', () => setSseConnected(true));
@@ -163,7 +164,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchTelemetry = async () => {
     try {
-      const res = await fetch('/api/stats');
+      const res = await fetch(apiUrl('/api/stats'));
       if (res.ok) setTelemetry(await res.json());
     } catch (err) {
       console.error(err);
@@ -172,7 +173,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchAlerts = async () => {
     try {
-      const res = await fetch('/api/alerts');
+      const res = await fetch(apiUrl('/api/alerts'));
       if (res.ok) setAlerts(await res.json());
     } catch (err) {
       console.error(err);
@@ -181,7 +182,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch('/api/logs');
+      const res = await fetch(apiUrl('/api/logs'));
       if (res.ok) setLogs(await res.json());
     } catch (err) {
       console.error(err);
@@ -190,7 +191,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchVisitors = async () => {
     try {
-      const res = await fetch('/api/visitors');
+      const res = await fetch(apiUrl('/api/visitors'));
       if (res.ok) setVisitors(await res.json());
     } catch (err) {
       console.error(err);
@@ -199,7 +200,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchQuestions = async () => {
     try {
-      const res = await fetch('/api/form-questions');
+      const res = await fetch(apiUrl('/api/form-questions'));
       if (res.ok) setQuestions(await res.json());
     } catch (err) {
       console.error(err);
@@ -212,7 +213,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setAuthError(null);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: usernameInput, password: passwordInput }),
@@ -242,7 +243,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setAuthError(null);
 
     try {
-      const res = await fetch('/api/auth/verify-mfa', {
+      const res = await fetch(apiUrl('/api/auth/verify-mfa'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ otp: mfaOtpInput }),
@@ -263,7 +264,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleAcknowledgeAlert = async (id: string) => {
     try {
-      const res = await fetch(`/api/alerts/${id}/acknowledge`, { method: 'PATCH' });
+      const res = await fetch(apiUrl(`/api/alerts/${id}/acknowledge`), { method: 'PATCH' });
       if (res.ok) {
         setAlerts((prev) =>
           prev.map((a) => (a.id === id ? { ...a, status: 'INVESTIGATING' } : a))
@@ -276,7 +277,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleResolveAlert = async (id: string) => {
     try {
-      const res = await fetch(`/api/alerts/${id}/resolve`, { method: 'PATCH' });
+      const res = await fetch(apiUrl(`/api/alerts/${id}/resolve`), { method: 'PATCH' });
       if (res.ok) {
         setAlerts((prev) =>
           prev.map((a) => (a.id === id ? { ...a, status: 'RESOLVED' } : a))

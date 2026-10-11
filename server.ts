@@ -358,6 +358,32 @@ async function startServer() {
   }
 
   app.use(express.json({ limit: '15mb' }));
+
+  // CORS Middleware: Enables seamless communication with frontend hosted on GitHub Pages or custom domain
+  app.use((req: Request, res: Response, next) => {
+    const origin = (req.headers.origin as string) || '*';
+    const allowedOrigin = process.env.CORS_ORIGIN || (origin !== 'null' ? origin : '*');
+    res.header('Access-Control-Allow-Origin', allowedOrigin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
+  // Health check endpoint for hosting platforms (Render, Koyeb, Fly.io)
+  app.get(['/health', '/api/health'], (_req: Request, res: Response) => {
+    return res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      service: 'Colcom Biosecurity Gate Decision Engine',
+      dbConnected: isDbConnected(),
+    });
+  });
+
   app.use('/uploads', express.static(UPLOAD_DIR));
 
   // Logo Upload & Delete Endpoints
@@ -1066,10 +1092,30 @@ async function startServer() {
 
   // Vite Middleware / Static Serving
   if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
-    });
+    const distPath = path.resolve(__dirname, 'dist');
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (_req: Request, res: Response) => {
+        const indexHtml = path.resolve(distPath, 'index.html');
+        if (fs.existsSync(indexHtml)) {
+          res.sendFile(indexHtml);
+        } else {
+          res.json({
+            status: 'online',
+            service: 'Colcom Biosecurity Gate Decision Engine API',
+            health: '/health',
+          });
+        }
+      });
+    } else {
+      app.get('*', (_req: Request, res: Response) => {
+        res.json({
+          status: 'online',
+          service: 'Colcom Biosecurity Gate Decision Engine API',
+          health: '/health',
+        });
+      });
+    }
   } else {
     const vite = await createViteServer({
       server: { middlewareMode: true },

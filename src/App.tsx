@@ -12,6 +12,7 @@ import { OfflineSyncBar } from './components/common/OfflineSyncBar';
 import { User } from './types';
 import { ShieldCheck } from 'lucide-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { apiUrl, resolveAssetUrl } from './lib/api';
 
 const INITIAL_USERS: User[] = [
   {
@@ -61,7 +62,7 @@ function AppInner() {
 
   useEffect(() => {
     // Fetch users
-    fetch('/api/users')
+    fetch(apiUrl('/api/users'))
       .then((res) => (res.ok ? res.json() : INITIAL_USERS))
       .then((users) => {
         setSystemUsers(users);
@@ -74,22 +75,22 @@ function AppInner() {
       });
 
     // Fetch initial settings for logo
-    fetch('/api/settings')
+    fetch(apiUrl('/api/settings'))
       .then((res) => (res.ok ? res.json() : null))
       .then((settings) => {
         if (settings && settings.logoUrl) {
-          setLogoUrl(settings.logoUrl);
+          setLogoUrl(resolveAssetUrl(settings.logoUrl));
         }
       })
       .catch(() => {});
 
     // Listen to SSE for real-time logo/settings updates
-    const eventSource = new EventSource('/api/events');
+    const eventSource = new EventSource(apiUrl('/api/events'));
     eventSource.addEventListener('settings_updated', (e) => {
       try {
         const payload = JSON.parse(e.data);
         if (payload.logoUrl !== undefined) {
-          setLogoUrl(payload.logoUrl);
+          setLogoUrl(resolveAssetUrl(payload.logoUrl));
         }
       } catch (err) {
         console.error(err);

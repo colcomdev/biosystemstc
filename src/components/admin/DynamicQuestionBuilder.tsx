@@ -17,6 +17,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { DynamicFormQuestion, QuestionType, RedAlertTrigger } from '../../types';
+import { apiUrl } from '../../lib/api';
 
 interface DynamicQuestionBuilderProps {
   questions: DynamicFormQuestion[];
@@ -39,7 +40,7 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
 
   const handleToggleActive = async (q: DynamicFormQuestion) => {
     try {
-      const res = await fetch(`/api/form-questions/${q.id}`, {
+      const res = await fetch(apiUrl(`/api/form-questions/${q.id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !q.isActive }),
@@ -58,7 +59,7 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
     if (!confirm(`Delete question: "${q.prompt}"?`)) return;
 
     try {
-      const res = await fetch(`/api/form-questions/${q.id}`, { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/form-questions/${q.id}`), { method: 'DELETE' });
       if (res.ok) onRefresh();
     } catch (err) {
       console.error(err);
@@ -76,7 +77,7 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
     setErrorMsg(null);
 
     try {
-      const res = await fetch('/api/form-questions', {
+      const res = await fetch(apiUrl('/api/form-questions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -119,7 +120,7 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
     const orderedIds = newOrder.map((q) => q.id);
 
     try {
-      const res = await fetch('/api/form-questions/reorder', {
+      const res = await fetch(apiUrl('/api/form-questions/reorder'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderedIds }),

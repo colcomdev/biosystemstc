@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { SystemSettings } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { apiUrl, resolveAssetUrl } from '../../lib/api';
 
 interface SystemSettingsViewProps {
   onSettingsSaved?: () => void;
@@ -59,11 +60,11 @@ export const SystemSettingsView: React.FC<SystemSettingsViewProps> = ({
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch('/api/settings');
+      const res = await fetch(apiUrl('/api/settings'));
       if (res.ok) {
         const data: SystemSettings = await res.json();
         setSettings(data);
-        setLogoPreviewUrl(data.logoUrl || null);
+        setLogoPreviewUrl(resolveAssetUrl(data.logoUrl) || null);
       }
     } catch (err) {
       console.error('Failed to load settings', err);
@@ -100,7 +101,7 @@ export const SystemSettingsView: React.FC<SystemSettingsViewProps> = ({
     formData.append('logo', selectedLogoFile);
 
     try {
-      const res = await fetch('/api/settings/logo', {
+      const res = await fetch(apiUrl('/api/settings/logo'), {
         method: 'POST',
         body: formData,
       });
@@ -111,7 +112,7 @@ export const SystemSettingsView: React.FC<SystemSettingsViewProps> = ({
         if (settings) {
           setSettings({ ...settings, logoUrl: data.logoUrl });
         }
-        setLogoPreviewUrl(data.logoUrl);
+        setLogoPreviewUrl(resolveAssetUrl(data.logoUrl));
         setSelectedLogoFile(null);
         if (onLogoUpdated) onLogoUpdated(data.logoUrl);
         if (onSettingsSaved) onSettingsSaved();
@@ -130,7 +131,7 @@ export const SystemSettingsView: React.FC<SystemSettingsViewProps> = ({
     setLogoMessage(null);
 
     try {
-      const res = await fetch('/api/settings/logo', {
+      const res = await fetch(apiUrl('/api/settings/logo'), {
         method: 'DELETE',
       });
 
@@ -160,7 +161,7 @@ export const SystemSettingsView: React.FC<SystemSettingsViewProps> = ({
     setSaveSuccess(false);
 
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch(apiUrl('/api/settings'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

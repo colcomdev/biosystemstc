@@ -43,6 +43,7 @@ import { DigitalSignaturePad } from './DigitalSignaturePad';
 import { BiometricCapturePad } from './BiometricCapturePad';
 import { queueOfflineSubmission, getOfflineQueue } from '../../lib/offline-storage';
 import { useTheme } from '../../context/ThemeContext';
+import { apiUrl, resolveAssetUrl } from '../../lib/api';
 
 const POPULAR_COUNTRIES = [
   'Zimbabwe',
@@ -146,7 +147,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
 
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/visitors/lookup?q=${encodeURIComponent(query)}`);
+        const res = await fetch(apiUrl(`/api/visitors/lookup?q=${encodeURIComponent(query)}`));
         if (res.ok) {
           const data = await res.json();
           const matches: RegisteredVisitor[] = data.matches || (data.visitor ? [data.visitor] : []);
@@ -169,11 +170,11 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
 
   const fetchSystemLogo = async () => {
     try {
-      const res = await fetch('/api/settings');
+      const res = await fetch(apiUrl('/api/settings'));
       if (res.ok) {
         const data = await res.json();
         if (data.logoUrl) {
-          setActiveLogo(data.logoUrl);
+          setActiveLogo(resolveAssetUrl(data.logoUrl));
         }
       }
     } catch {
@@ -187,7 +188,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
 
   const fetchActiveQuestions = async () => {
     try {
-      const res = await fetch('/api/form-questions?activeOnly=true');
+      const res = await fetch(apiUrl('/api/form-questions?activeOnly=true'));
       if (res.ok) {
         const data: DynamicFormQuestion[] = await res.json();
         setQuestions(data);
@@ -229,7 +230,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
     setShowSuggestions(false);
 
     try {
-      const res = await fetch(`/api/visitors/lookup?q=${encodeURIComponent(query)}`);
+      const res = await fetch(apiUrl(`/api/visitors/lookup?q=${encodeURIComponent(query)}`));
       if (res.ok) {
         const data = await res.json();
         if (data.found && data.visitor) {
@@ -409,7 +410,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
     }
 
     try {
-      const res = await fetch('/api/gate/evaluate-access', {
+      const res = await fetch(apiUrl('/api/gate/evaluate-access'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
