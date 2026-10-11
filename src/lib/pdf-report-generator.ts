@@ -29,14 +29,14 @@ export function generateEodPdfReport(
 
   // Title & Branding
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(255, 255, 255);
   doc.text('INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS', 14, currentY);
 
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(52, 211, 153); // emerald-400
-  doc.text('AFRICAN SWINE FEVER & FMD BIOSECURITY COMPLIANCE AUDIT REPORT', 14, currentY + 6);
+  doc.text('BIOSECURITY COMPLIANCE & GATE AUDIT REPORT', 14, currentY + 6);
 
   doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184); // slate-400
@@ -118,7 +118,7 @@ export function generateEodPdfReport(
   doc.roundedRect(kpi4X, currentY, kpiWidth, kpiHeight, 2, 2, 'F');
   doc.setFontSize(7);
   doc.setTextColor(180, 83, 9);
-  doc.text('ASF QUARANTINE', kpi4X + 4, currentY + 5);
+  doc.text('QUARANTINE FLAGS', kpi4X + 4, currentY + 5);
   doc.setFontSize(13);
   doc.setTextColor(180, 83, 9);
   doc.text(String(stats.quarantineAlertsCount), kpi4X + 4, currentY + 14);

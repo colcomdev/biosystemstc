@@ -44,6 +44,7 @@ import { BiometricCapturePad } from './BiometricCapturePad';
 import { queueOfflineSubmission, getOfflineQueue } from '../../lib/offline-storage';
 import { useTheme } from '../../context/ThemeContext';
 import { apiUrl, resolveAssetUrl } from '../../lib/api';
+import { DEFAULT_DECLARATION_QUESTIONS, getInitialDeclarationAnswers } from '../../data/defaultQuestions';
 
 const POPULAR_COUNTRIES = [
   'Zimbabwe',
@@ -80,9 +81,11 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
   const [purposeOfVisit, setPurposeOfVisit] = useState('');
   const [fromOrigin, setFromOrigin] = useState('');
 
-  // Dynamic Form Questions
-  const [questions, setQuestions] = useState<DynamicFormQuestion[]>([]);
-  const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, boolean | string>>({});
+  // Dynamic Form Questions (Pre-populated with default biosecurity questions so never blank)
+  const [questions, setQuestions] = useState<DynamicFormQuestion[]>(DEFAULT_DECLARATION_QUESTIONS);
+  const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, boolean | string>>(
+    () => getInitialDeclarationAnswers(DEFAULT_DECLARATION_QUESTIONS)
+  );
 
   // Digital Signature & Optional Photo Capture
   const [digitalSignature, setDigitalSignature] = useState('');
@@ -191,23 +194,25 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
       const res = await fetch(apiUrl('/api/form-questions?activeOnly=true'));
       if (res.ok) {
         const data: DynamicFormQuestion[] = await res.json();
-        setQuestions(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setQuestions(data);
 
-        // Pre-initialize baseline default answers for clean state
-        const initialAnswers: Record<string, boolean | string> = {};
-        data.forEach((q) => {
-          if (q.type === 'BOOLEAN') {
-            if (q.prompt.toLowerCase().includes('register')) {
-              initialAnswers[q.id] = true;
-            } else {
-              initialAnswers[q.id] = false;
+          // Pre-initialize baseline default answers for clean state
+          const initialAnswers: Record<string, boolean | string> = {};
+          data.forEach((q) => {
+            if (q.type === 'BOOLEAN') {
+              if (q.prompt.toLowerCase().includes('register')) {
+                initialAnswers[q.id] = true;
+              } else {
+                initialAnswers[q.id] = false;
+              }
             }
-          }
-        });
-        setDynamicAnswers(initialAnswers);
+          });
+          setDynamicAnswers((prev) => ({ ...initialAnswers, ...prev }));
+        }
       }
     } catch (err) {
-      console.error('Failed to load active questions', err);
+      console.warn('Using baseline African Swine Fever declaration questions:', err);
     }
   };
 
@@ -381,7 +386,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
         decisionId: `offline_dec_${Date.now()}`,
         status: isOfflinePass ? 'GRANTED' : 'DENIED',
         primaryReason: isOfflinePass
-          ? 'ACCESS GRANTED - Welcome to Colcom Foods'
+          ? 'ACCESS GRANTED - Welcome to Triple C Pigs'
           : 'ACCESS DENIED / BIOSECURITY QUARANTINE HOLD',
         denialReasons: offlineDenials,
         similarityScore: isOfflinePass ? 0.92 : 0.51,
@@ -485,7 +490,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-medium">
-                INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+                TRIPLE C PIGS • INNSCOR AFRICA LTD
               </p>
             </div>
           </div>
@@ -829,7 +834,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
                   required
                   value={fromOrigin}
                   onChange={(e) => setFromOrigin(e.target.value)}
-                  placeholder="e.g. Colcom Chilled Logistics / Harare Depot"
+                  placeholder="e.g. Norton Feed Mill / Harare Logistics / Contractor Depot"
                   className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500"
                 />
                 <Building className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />

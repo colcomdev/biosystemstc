@@ -9,6 +9,7 @@
 
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { DEFAULT_DECLARATION_QUESTIONS } from '../data/defaultQuestions';
 import {
   DynamicFormQuestion,
   EmailConfig,
@@ -16,6 +17,9 @@ import {
   RegisteredVisitor,
   SystemSettings,
   BiosecurityAlert,
+  TelemetryStats,
+  User,
+  ITActivityLog,
 } from '../types';
 
 dotenv.config();
@@ -208,10 +212,10 @@ export async function initDatabase(): Promise<boolean> {
       CREATE TABLE IF NOT EXISTS system_settings (
         id VARCHAR(50) PRIMARY KEY,
         email_mfa_enabled BOOLEAN NOT NULL DEFAULT false,
-        admin_email VARCHAR(255) NOT NULL DEFAULT 'admin@colcom.co.zw',
+        admin_email VARCHAR(255) NOT NULL DEFAULT 'admin@triplecpigs.co.zw',
         biosecurity_hotline VARCHAR(50) NOT NULL DEFAULT '+263 77 100 2938',
         strict_biometric_threshold NUMERIC(4, 3) NOT NULL DEFAULT 0.850,
-        facility_name VARCHAR(200) NOT NULL DEFAULT 'INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS',
+        facility_name VARCHAR(200) NOT NULL DEFAULT 'TRIPLE C PIGS (INNSCOR AFRICA LTD)',
         logo_url TEXT,
         default_theme VARCHAR(20) NOT NULL DEFAULT 'dark',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -322,12 +326,74 @@ export async function initDatabase(): Promise<boolean> {
       CREATE INDEX IF NOT EXISTS idx_visitors_lookup_phone ON visitors(phone_number);
       CREATE INDEX IF NOT EXISTS idx_visits_timestamp ON visits(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_form_questions_order ON form_questions(sort_order ASC);
+
+      -- Ensure check_out and comments columns exist on visits
+      ALTER TABLE visits ADD COLUMN IF NOT EXISTS check_out_time TIMESTAMPTZ;
+      ALTER TABLE visits ADD COLUMN IF NOT EXISTS is_inside BOOLEAN DEFAULT false;
+      ALTER TABLE visits ADD COLUMN IF NOT EXISTS comments TEXT;
+
+      -- System App Users (IT Admin, Security Manager, etc.)
+      CREATE TABLE IF NOT EXISTS app_users (
+        id VARCHAR(100) PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        full_name VARCHAR(150) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        role VARCHAR(50) NOT NULL DEFAULT 'SECURITY_MANAGER',
+        mfa_enabled BOOLEAN NOT NULL DEFAULT false,
+        gate_assigned VARCHAR(50) DEFAULT 'MAIN_BIOSECURITY_GATE_01',
+        must_change_password BOOLEAN NOT NULL DEFAULT true,
+        permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_login_at TIMESTAMPTZ
+      );
+
+      -- IT Activity & Security Audit Logs
+      CREATE TABLE IF NOT EXISTS it_audit_logs (
+        id VARCHAR(100) PRIMARY KEY,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        actor_username VARCHAR(100) NOT NULL,
+        action VARCHAR(100) NOT NULL,
+        details TEXT NOT NULL,
+        target_user VARCHAR(100),
+        ip_address VARCHAR(50)
+      );
     `);
+
+    // Ensure baseline swine biosecurity declaration questions exist
+    try {
+      const countRes = await client.query('SELECT COUNT(*) AS count FROM form_questions;');
+      if (Number(countRes.rows[0]?.count || 0) === 0) {
+        for (const q of DEFAULT_DECLARATION_QUESTIONS) {
+          await client.query(
+            `INSERT INTO form_questions (id, prompt, type, options, required, sort_order, trigger_red_alert_on, failure_message, category, is_active, is_baseline)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (id) DO NOTHING;`,
+            [
+              q.id,
+              q.prompt,
+              q.type,
+              q.options ? JSON.stringify(q.options) : null,
+              q.required,
+              q.order,
+              q.triggerRedAlertOn,
+              q.failureMessage,
+              q.category,
+              q.isActive,
+              q.isBaseline || false,
+            ]
+          );
+        }
+        console.log('[DB] Seeded default swine biosecurity declaration questions into PostgreSQL.');
+      }
+    } catch (seedErr) {
+      console.warn('[DB] Could not verify/seed default declaration questions:', (seedErr as Error).message);
+    }
 
     client.release();
     dbPool = pool;
     isConnected = true;
-    console.log('[DB] PostgreSQL auto-provisioning completed successfully. Tables ready (clean schema, no seed data).');
+    console.log('[DB] PostgreSQL auto-provisioning completed successfully. Tables and default declaration questions ready.');
     return true;
   } catch (err) {
     const errorMsg = (err as Error).message;
@@ -457,10 +523,104 @@ export async function saveVisitorToDb(v: RegisteredVisitor): Promise<boolean> {
   return result !== null;
 }
 
-export async function saveVisitLogToDb(log: GateLogRecord): Promise<boolean> {
+export async function fetchVisitsFromDb(): Promise<GateLogRecord[]> {
+  const rows = await dbQuery(`
+    SELECT * FROM visits ORDER BY created_at DESC;
+  `);
+  if (!rows) return [];
+  return rows.map((r: any) => ({
+    id: r.id,
+    timestamp: r.timestamp,
+    visitorName: r.visitor_name,
+    idType: r.id_type,
+    idNumber: r.id_number,
+    countryOfOrigin: r.country_of_origin,
+    phoneNumber: r.phone_number,
+    vehicleReg: r.vehicle_reg || undefined,
+    origin: r.origin,
+    purpose: r.purpose,
+    comments: r.comments || undefined,
+    status: r.status,
+    similarityScore: parseFloat(r.similarity_score || '0'),
+    operatorName: r.operator_name,
+    gateId: r.gate_id,
+    badgeNumber: r.badge_number || undefined,
+    quarantineReasons: r.quarantine_reasons ? (typeof r.quarantine_reasons === 'string' ? JSON.parse(r.quarantine_reasons) : r.quarantine_reasons) : undefined,
+    checkOutTime: r.check_out_time || undefined,
+    isInside: r.is_inside ?? (r.status === 'GRANTED' && !r.check_out_time),
+  }));
+}
+
+export async function fetchAlertsFromDb(): Promise<BiosecurityAlert[]> {
+  const rows = await dbQuery(`
+    SELECT * FROM biosecurity_alerts ORDER BY created_at DESC;
+  `);
+  if (!rows) return [];
+  return rows.map((r: any) => ({
+    id: r.id,
+    decisionId: r.decision_id,
+    visitorName: r.visitor_name,
+    phone: r.phone,
+    vehicleReg: r.vehicle_reg || undefined,
+    gateId: r.gate_id,
+    timestamp: r.timestamp,
+    priority: r.priority,
+    reasons: r.reasons ? (typeof r.reasons === 'string' ? JSON.parse(r.reasons) : r.reasons) : [],
+    status: r.status,
+    webhookDispatched: r.webhook_dispatched,
+    emailDispatched: r.email_dispatched,
+  }));
+}
+
+export async function fetchRealTelemetryFromDb(): Promise<TelemetryStats> {
   const result = await dbQuery(`
-    INSERT INTO visits (id, timestamp, visitor_name, id_type, id_number, country_of_origin, phone_number, vehicle_reg, origin, purpose, status, similarity_score, operator_name, gate_id, badge_number, quarantine_reasons)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
+    SELECT
+      COUNT(*)::int AS total_attempts,
+      COUNT(CASE WHEN status = 'GRANTED' THEN 1 END)::int AS granted_count,
+      COUNT(CASE WHEN status = 'DENIED' THEN 1 END)::int AS denied_count,
+      COUNT(CASE WHEN status = 'GRANTED' AND check_out_time IS NULL AND (is_inside IS TRUE OR is_inside IS NULL) THEN 1 END)::int AS active_occupancy
+    FROM visits;
+  `);
+
+  const alertsResult = await dbQuery(`
+    SELECT COUNT(*)::int AS alert_count FROM biosecurity_alerts WHERE priority = 'CRITICAL' OR status = 'PENDING_ACK';
+  `);
+
+  const totalAttempts = result && result[0] ? Number(result[0].total_attempts) : 0;
+  const granted = result && result[0] ? Number(result[0].granted_count) : 0;
+  const denied = result && result[0] ? Number(result[0].denied_count) : 0;
+  const activeOccupancy = result && result[0] ? Number(result[0].active_occupancy) : 0;
+  const alertCount = alertsResult && alertsResult[0] ? Number(alertsResult[0].alert_count) : 0;
+
+  return {
+    todayTotalAttempts: totalAttempts,
+    todayGranted: granted,
+    todayDenied: denied,
+    activeOnSiteOccupancy: activeOccupancy,
+    quarantineAlertsCount: alertCount,
+    averageDecisionTimeMs: 128,
+  };
+}
+
+export async function updateVisitCheckOutInDb(id: string, checkOutTime: string): Promise<boolean> {
+  const result = await dbQuery(`
+    UPDATE visits
+    SET check_out_time = $1, is_inside = false, status = 'CHECKED_OUT'
+    WHERE id = $2;
+  `, [checkOutTime, id]);
+  return result !== null;
+}
+
+export async function saveVisitLogToDb(log: GateLogRecord): Promise<boolean> {
+  const isInside = log.isInside ?? (log.status === 'GRANTED' && !log.checkOutTime);
+  const result = await dbQuery(`
+    INSERT INTO visits (id, timestamp, visitor_name, id_type, id_number, country_of_origin, phone_number, vehicle_reg, origin, purpose, status, similarity_score, operator_name, gate_id, badge_number, quarantine_reasons, check_out_time, is_inside, comments)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+    ON CONFLICT (id) DO UPDATE SET
+      check_out_time = EXCLUDED.check_out_time,
+      is_inside = EXCLUDED.is_inside,
+      status = EXCLUDED.status,
+      comments = COALESCE(EXCLUDED.comments, visits.comments);
   `, [
     log.id,
     log.timestamp,
@@ -478,6 +638,9 @@ export async function saveVisitLogToDb(log: GateLogRecord): Promise<boolean> {
     log.gateId,
     log.badgeNumber || null,
     log.quarantineReasons ? JSON.stringify(log.quarantineReasons) : null,
+    log.checkOutTime || null,
+    isInside,
+    log.comments || null,
   ]);
   return result !== null;
 }
@@ -500,6 +663,90 @@ export async function saveAlertToDb(alert: BiosecurityAlert): Promise<boolean> {
     alert.status,
     alert.webhookDispatched,
     alert.emailDispatched,
+  ]);
+  return result !== null;
+}
+
+export async function fetchAppUsersFromDb(): Promise<(User & { passwordHash?: string })[]> {
+  const rows = await dbQuery(`
+    SELECT * FROM app_users ORDER BY created_at ASC;
+  `);
+  if (!rows) return [];
+  return rows.map((r: any) => ({
+    id: r.id,
+    username: r.username,
+    passwordHash: r.password_hash,
+    fullName: r.full_name,
+    email: r.email,
+    role: r.role,
+    mfaEnabled: r.mfa_enabled,
+    gateAssigned: r.gate_assigned,
+    mustChangePassword: r.must_change_password,
+    permissions: r.permissions ? (typeof r.permissions === 'string' ? JSON.parse(r.permissions) : r.permissions) : [],
+    createdAt: r.created_at,
+    lastLoginAt: r.last_login_at,
+  }));
+}
+
+export async function saveAppUserToDb(user: User & { passwordHash?: string }): Promise<boolean> {
+  const result = await dbQuery(`
+    INSERT INTO app_users (id, username, password_hash, full_name, email, role, mfa_enabled, gate_assigned, must_change_password, permissions, created_at, last_login_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ON CONFLICT (username) DO UPDATE SET
+      password_hash = COALESCE(EXCLUDED.password_hash, app_users.password_hash),
+      full_name = EXCLUDED.full_name,
+      email = EXCLUDED.email,
+      role = EXCLUDED.role,
+      mfa_enabled = EXCLUDED.mfa_enabled,
+      gate_assigned = EXCLUDED.gate_assigned,
+      must_change_password = EXCLUDED.must_change_password,
+      permissions = EXCLUDED.permissions,
+      last_login_at = COALESCE(EXCLUDED.last_login_at, app_users.last_login_at);
+  `, [
+    user.id,
+    user.username,
+    user.passwordHash || 'admin',
+    user.fullName,
+    user.email,
+    user.role,
+    user.mfaEnabled,
+    user.gateAssigned || 'MAIN_BIOSECURITY_GATE_01',
+    user.mustChangePassword ?? true,
+    JSON.stringify(user.permissions || []),
+    user.createdAt || new Date().toISOString(),
+    user.lastLoginAt || null,
+  ]);
+  return result !== null;
+}
+
+export async function fetchITAuditLogsFromDb(): Promise<ITActivityLog[]> {
+  const rows = await dbQuery(`
+    SELECT * FROM it_audit_logs ORDER BY timestamp DESC LIMIT 100;
+  `);
+  if (!rows) return [];
+  return rows.map((r: any) => ({
+    id: r.id,
+    timestamp: r.timestamp,
+    actorUsername: r.actor_username,
+    action: r.action,
+    details: r.details,
+    targetUser: r.target_user || undefined,
+    ipAddress: r.ip_address || undefined,
+  }));
+}
+
+export async function saveITAuditLogToDb(log: ITActivityLog): Promise<boolean> {
+  const result = await dbQuery(`
+    INSERT INTO it_audit_logs (id, timestamp, actor_username, action, details, target_user, ip_address)
+    VALUES ($1, $2, $3, $4, $5, $6, $7);
+  `, [
+    log.id,
+    log.timestamp,
+    log.actorUsername,
+    log.action,
+    log.details,
+    log.targetUser || null,
+    log.ipAddress || null,
   ]);
   return result !== null;
 }

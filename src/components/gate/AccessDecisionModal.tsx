@@ -63,7 +63,7 @@ export const AccessDecisionModal: React.FC<AccessDecisionModalProps> = ({
   const handleShareBadge = () => {
     if (decision.gateBadge) {
       navigator.clipboard.writeText(
-        `COLCOM FOODS ACCESS PASS\nBadge: ${decision.gateBadge.badgeNumber}\nVisitor: ${decision.visitorName}\n${decision.idType}: ${decision.idNumber}\nCountry: ${decision.countryOfOrigin}\nExpires: ${new Date(
+        `TRIPLE C PIGS ACCESS PASS\nBadge: ${decision.gateBadge.badgeNumber}\nVisitor: ${decision.visitorName}\n${decision.idType}: ${decision.idNumber}\nCountry: ${decision.countryOfOrigin}\nExpires: ${new Date(
           decision.gateBadge.expiresAt
         ).toLocaleTimeString()}`
       );
@@ -95,7 +95,7 @@ export const AccessDecisionModal: React.FC<AccessDecisionModalProps> = ({
         >
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs uppercase tracking-widest font-black opacity-90">
-              TRIPLE C PIGS t/a COLCOM FOODS • GATE DECISION ENGINE
+              TRIPLE C PIGS (INNSCOR AFRICA LTD) • GATE DECISION ENGINE
             </span>
           </div>
 
@@ -112,7 +112,7 @@ export const AccessDecisionModal: React.FC<AccessDecisionModalProps> = ({
 
           <p className="text-sm font-semibold tracking-wide text-white/95 max-w-md text-center">
             {isGranted
-              ? 'Welcome to Colcom Foods'
+              ? 'Welcome to Triple C Pigs'
               : 'ACCESS DENIED / BIOSECURITY QUARANTINE HOLD'}
           </p>
 
@@ -211,7 +211,7 @@ export const AccessDecisionModal: React.FC<AccessDecisionModalProps> = ({
                     <QrCode className="w-8 h-8 text-emerald-950 shrink-0" />
                     <div>
                       <div className="text-xs font-black uppercase tracking-tight">
-                        COLCOM GATE CLEARANCE TOKEN
+                        TRIPLE C PIGS GATE CLEARANCE TOKEN
                       </div>
                       <div className="text-[10px] text-slate-600 font-mono">
                         HASH: {decision.decisionId}

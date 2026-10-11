@@ -228,7 +228,7 @@ export const ReportEmailConfigView: React.FC = () => {
                 type="email"
                 value={newRecipient}
                 onChange={(e) => setNewRecipient(e.target.value)}
-                placeholder="Add stakeholder email (e.g. vet.officer@colcom.co.zw)..."
+                placeholder="Add stakeholder email (e.g. vet.officer@triplecpigs.co.zw)..."
                 className="flex-1 px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 font-mono text-xs"
               />
               <button

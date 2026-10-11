@@ -42,6 +42,7 @@ import {
   TelemetryStats,
   User,
 } from '../../types';
+import { DEFAULT_DECLARATION_QUESTIONS } from '../../data/defaultQuestions';
 import { PostgresArchitectureModal } from './PostgresArchitectureModal';
 import { PreRegisterModal } from './PreRegisterModal';
 import { DynamicQuestionBuilder } from './DynamicQuestionBuilder';
@@ -73,7 +74,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // MFA Flow
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaOtpInput, setMfaOtpInput] = useState('');
-  const [mfaEmail, setMfaEmail] = useState('admin@colcom.co.zw');
+  const [mfaEmail, setMfaEmail] = useState('admin@triplecpigs.co.zw');
   const [debugOtp, setDebugOtp] = useState<string | null>(null);
 
   // Active Tab
@@ -91,7 +92,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [alerts, setAlerts] = useState<BiosecurityAlert[]>([]);
   const [logs, setLogs] = useState<GateLogRecord[]>([]);
   const [visitors, setVisitors] = useState<RegisteredVisitor[]>([]);
-  const [questions, setQuestions] = useState<DynamicFormQuestion[]>([]);
+  const [questions, setQuestions] = useState<DynamicFormQuestion[]>(DEFAULT_DECLARATION_QUESTIONS);
   const [sseConnected, setSseConnected] = useState(false);
 
   // Search & Filters
@@ -201,7 +202,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const fetchQuestions = async () => {
     try {
       const res = await fetch(apiUrl('/api/form-questions'));
-      if (res.ok) setQuestions(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setQuestions(data);
+        }
+      }
     } catch (err) {
       console.error(err);
     }
@@ -219,7 +225,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         body: JSON.stringify({ username: usernameInput, password: passwordInput }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        // Response is not JSON
+      }
+
+      if (!data) {
+        if (rawText.includes('<!DOCTYPE html') || rawText.includes('<html') || !rawText.trim()) {
+          setAuthError(
+            'Backend server unreachable: Render is currently running as a "Static Site" (HTML only) instead of a "Web Service" (Node.js). In Render, deploy as a Web Service with Build: "npm install --legacy-peer-deps && npm run build" and Start: "npm start".'
+          );
+          return;
+        }
+        setAuthError('Connection error: Received invalid response from server.');
+        return;
+      }
+
       if (!res.ok) {
         setAuthError(data.error || 'Authentication failed');
         return;
@@ -232,8 +256,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       } else {
         setIsAuthenticated(true);
       }
-    } catch {
-      setAuthError('Connection error during authentication.');
+    } catch (err: any) {
+      setAuthError(err?.message || 'Connection error during authentication. Check your network or backend URL.');
     }
   };
 
@@ -249,7 +273,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         body: JSON.stringify({ otp: mfaOtpInput }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        // Not JSON
+      }
+
+      if (!data) {
+        setAuthError('Connection error: Invalid response from backend.');
+        return;
+      }
+
       if (!res.ok) {
         setAuthError(data.error || 'Invalid OTP code.');
         return;
@@ -352,7 +388,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             Security &amp; Biosecurity Portal
           </h2>
           <p className="text-xs text-slate-400">
-            INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS • Administrative Surface
+            TRIPLE C PIGS (INNSCOR AFRICA LTD) • Administrative Surface
           </p>
         </div>
 

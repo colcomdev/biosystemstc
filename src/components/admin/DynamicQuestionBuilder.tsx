@@ -36,7 +36,25 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
   const [failureMessage, setFailureMessage] = useState('');
   const [category, setCategory] = useState<'BIOSECURITY' | 'IDENTITY' | 'SAFETY' | 'GENERAL'>('BIOSECURITY');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleResetDefaults = async () => {
+    if (!confirm('Restore baseline African Swine Fever biosecurity declaration questions?')) return;
+    setIsResetting(true);
+    try {
+      const res = await fetch(apiUrl('/api/form-questions/reset-defaults'), {
+        method: 'POST',
+      });
+      if (res.ok) {
+        onRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to reset default questions', err);
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const handleToggleActive = async (q: DynamicFormQuestion) => {
     try {
@@ -144,14 +162,26 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsCreating(!isCreating)}
-          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow"
-        >
-          <Plus className="w-4 h-4" />
-          {isCreating ? 'Cancel' : 'Add Dynamic Question'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleResetDefaults}
+            disabled={isResetting}
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl transition flex items-center gap-1.5 border border-slate-700"
+            title="Restore baseline African Swine Fever questions"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isResetting ? 'animate-spin' : ''}`} />
+            {isResetting ? 'Restoring...' : 'Restore Defaults'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsCreating(!isCreating)}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow"
+          >
+            <Plus className="w-4 h-4" />
+            {isCreating ? 'Cancel' : 'Add Dynamic Question'}
+          </button>
+        </div>
       </div>
 
       {/* Question Creation Form */}
@@ -264,6 +294,21 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
 
       {/* Dynamic Questions Table / Cards */}
       <div className="space-y-2.5">
+        {questions.length === 0 && (
+          <div className="p-8 text-center bg-slate-950/60 rounded-xl border border-dashed border-slate-800 space-y-3">
+            <HelpCircle className="w-8 h-8 text-amber-400 mx-auto" />
+            <p className="text-xs text-slate-300 font-medium">No declaration questions currently loaded.</p>
+            <button
+              type="button"
+              onClick={handleResetDefaults}
+              disabled={isResetting}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition shadow inline-flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+              Restore Default Biosecurity Questions
+            </button>
+          </div>
+        )}
         {questions.map((q, idx) => (
           <div
             key={q.id}

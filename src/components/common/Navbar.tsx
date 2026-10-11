@@ -37,7 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {logoUrl ? (
             <img
               src={resolveAssetUrl(logoUrl) || ''}
-              alt="INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS"
+              alt="TRIPLE C PIGS (INNSCOR AFRICA LTD)"
               className="h-9 max-w-[130px] object-contain rounded-lg p-0.5 bg-white/10 border border-slate-700 shrink-0"
             />
           ) : (
@@ -49,7 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs sm:text-sm font-black text-white tracking-tight">
-                INNSCOR AFRICA LTD(Colcom Foods) <span className="text-emerald-400 font-semibold">T/A TRIPLE C PIGS</span>
+                TRIPLE C PIGS <span className="text-emerald-400 font-semibold">• INNSCOR AFRICA LTD</span>
               </span>
               <span className="hidden md:inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
                 BIO-GATE PASS

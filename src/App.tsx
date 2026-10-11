@@ -18,7 +18,7 @@ const INITIAL_USERS: User[] = [
   {
     id: 'usr_001',
     username: 'gate_operator',
-    email: 'gate1.security@colcom.co.zw',
+    email: 'gate1.security@triplecpigs.co.zw',
     fullName: 'Tendai Moyo (Guard Sgt.)',
     role: 'GATE_OPERATOR',
     mfaEnabled: false,
@@ -27,7 +27,7 @@ const INITIAL_USERS: User[] = [
   {
     id: 'usr_002',
     username: 'admin',
-    email: 'biosecurity@colcom.co.zw',
+    email: 'biosecurity@triplecpigs.co.zw',
     fullName: 'Dr. Sarah Ndlovu (Chief Vet & Biosecurity Officer)',
     role: 'BIOSECURITY_OFFICER',
     mfaEnabled: false,
@@ -36,7 +36,7 @@ const INITIAL_USERS: User[] = [
   {
     id: 'usr_003',
     username: 'sec_manager',
-    email: 'security.mgr@colcom.co.zw',
+    email: 'security.mgr@triplecpigs.co.zw',
     fullName: 'David Chimuti (Security Operations Manager)',
     role: 'SECURITY_MANAGER',
     mfaEnabled: false,
@@ -154,7 +154,7 @@ function AppInner() {
         <div className="flex items-center justify-center gap-2 flex-wrap">
           <ShieldCheck className="w-4 h-4 text-emerald-500" />
           <span className="font-bold text-slate-200">
-            INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+            TRIPLE C PIGS (INNSCOR AFRICA LTD)
           </span>
         </div>
       </footer>

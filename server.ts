@@ -1,5 +1,6 @@
 /**
- * Colcom Foods (Triple C Pigs) - African Swine Fever Biosecurity Gate Decision Engine
+ * INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS
+ * Swine Biosecurity Gate Decision Engine & Visitor Management
  * Full-Stack Express Server with Dynamic Form Engine, Automated Email Alerts, PDF Reporting, and Vite Integration
  */
 
@@ -24,7 +25,10 @@ import {
   RegisteredVisitor,
   SystemSettings,
   TelemetryStats,
+  User,
+  ITActivityLog,
 } from './src/types';
+import { DEFAULT_DECLARATION_QUESTIONS } from './src/data/defaultQuestions';
 import {
   cosineSimilarity,
   generateSyntheticEmbedding,
@@ -42,6 +46,14 @@ import {
   saveVisitorToDb,
   saveVisitLogToDb,
   saveAlertToDb,
+  fetchVisitsFromDb,
+  fetchAlertsFromDb,
+  fetchRealTelemetryFromDb,
+  updateVisitCheckOutInDb,
+  fetchAppUsersFromDb,
+  saveAppUserToDb,
+  fetchITAuditLogsFromDb,
+  saveITAuditLogToDb,
 } from './src/lib/db';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,10 +81,10 @@ const logoUpload = multer({
 // System Settings (Default: Email MFA disabled for seamless initial login)
 let systemSettings: SystemSettings = {
   emailMfaEnabled: false,
-  adminEmail: 'admin@colcom.co.zw',
+  adminEmail: 'admin@triplecpigs.co.zw',
   biosecurityHotline: '+263 77 100 2938',
   strictBiometricThreshold: 0.85,
-  facilityName: 'INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS',
+  facilityName: 'TRIPLE C PIGS (INNSCOR AFRICA LTD)',
   logoUrl: null,
   defaultTheme: 'dark',
 };
@@ -81,87 +93,23 @@ let systemSettings: SystemSettings = {
 let emailConfig: EmailConfig = {
   id: 'cfg_email_001',
   recipients: [
-    'soc@triplecpigs.co.zw',
-    'biosecurity@triplecpigs.co.zw',
-    'security.mgr@triplecpigs.co.zw',
-    'audits@innscorafrica.com',
+    'mcharumbira@colcom.co.zw',
   ],
   emailAlertsOnDenial: true,
   eodReportEnabled: true,
   eodReportScheduleTime: '18:00',
-  senderEmail: 'no-reply.soc@triplecpigs.co.zw',
+  senderEmail: 'alerts@triplecpigs.co.zw',
   smtpHost: 'smtp.triplecpigs.co.zw',
   smtpPort: 587,
   lastEodReportGeneratedAt: new Date(Date.now() - 86400000).toISOString(),
-  lastEodReportSentTo: ['soc@triplecpigs.co.zw', 'biosecurity@triplecpigs.co.zw'],
+  lastEodReportSentTo: ['mcharumbira@colcom.co.zw'],
 };
 
 // Active MFA OTP store
 let currentEmailOtp = '849201';
 
 // Dynamic Form Questions Store (Baseline Triple C Biosecurity Questions)
-let dynamicQuestions: DynamicFormQuestion[] = [
-  {
-    id: 'q_baseline_1',
-    prompt: 'Have You been in Contact with any cloven hoofed animal in the last 72 hours?',
-    type: 'BOOLEAN',
-    required: true,
-    order: 1,
-    triggerRedAlertOn: 'TRUE',
-    failureMessage: 'CRITICAL QUARANTINE BREACH: Cloven-hoofed animal contact declared within last 72 hours. High African Swine Fever / FMD transmission risk. Entry prohibited into Colcom production zone.',
-    category: 'BIOSECURITY',
-    isActive: true,
-    isBaseline: true,
-  },
-  {
-    id: 'q_baseline_2',
-    prompt: 'Are you carrying any meat or Meat Products? (Search Vehicles for meat products).',
-    type: 'BOOLEAN',
-    required: true,
-    order: 2,
-    triggerRedAlertOn: 'TRUE',
-    failureMessage: 'CONTRABAND DETECTED: Carrying uncertified meat or meat products into pig production boundaries is strictly prohibited under Innscor Biosecurity Policy Sec 4.2.',
-    category: 'BIOSECURITY',
-    isActive: true,
-    isBaseline: true,
-  },
-  {
-    id: 'q_baseline_3',
-    prompt: "Is your name on the visitors' register ?",
-    type: 'BOOLEAN',
-    required: true,
-    order: 3,
-    triggerRedAlertOn: 'FALSE',
-    failureMessage: "VISITOR REGISTER HOLD: Visitor name or identity is not pre-approved on the Triple C Pigs authorized entry register. Security manager sign-off required.",
-    category: 'BIOSECURITY',
-    isActive: true,
-    isBaseline: true,
-  },
-  {
-    id: 'q_baseline_4',
-    prompt: 'Have you visited any livestock auction yards, commercial abattoirs, or bushmeat markets in the past 7 days?',
-    type: 'BOOLEAN',
-    required: true,
-    order: 4,
-    triggerRedAlertOn: 'TRUE',
-    failureMessage: 'HIGH BIOSECURITY RISK: Prior exposure to high-density animal aggregation centers within 7 days. Vehicle & footwear chemical decontamination required.',
-    category: 'BIOSECURITY',
-    isActive: true,
-    isBaseline: false,
-  },
-  {
-    id: 'q_baseline_5',
-    prompt: 'Visitor Digital Signature Confirmation',
-    type: 'SIGNATURE',
-    required: false,
-    order: 5,
-    triggerRedAlertOn: 'NONE',
-    failureMessage: 'Digital legal declaration signature is optional.',
-    category: 'BIOSECURITY',
-    isActive: true,
-    isBaseline: true,
-  },
-];
+let dynamicQuestions: DynamicFormQuestion[] = JSON.parse(JSON.stringify(DEFAULT_DECLARATION_QUESTIONS));
 
 // Pre-registered visitors seed (with ID/Passport and Country of Origin)
 const baselineSeedVector1 = generateSyntheticEmbedding('farai_matthews_contractor');
@@ -277,7 +225,8 @@ let visitorLogs: GateLogRecord[] = [
     similarityScore: 0.9412,
     operatorName: 'Gate Operator (Field)',
     gateId: 'MAIN_BIOSECURITY_GATE_01',
-    badgeNumber: 'COL-PASS-9104',
+    badgeNumber: 'TCP-PASS-9104',
+    isInside: true,
   },
   {
     id: 'log_seed_2',
@@ -298,6 +247,7 @@ let visitorLogs: GateLogRecord[] = [
     ],
     operatorName: 'Gate Operator (Field)',
     gateId: 'MAIN_BIOSECURITY_GATE_01',
+    isInside: false,
   },
 ];
 
@@ -321,7 +271,79 @@ let biosecurityAlerts: BiosecurityAlert[] = [
   },
 ];
 
-let activeOccupantsCount = 14;
+function getActiveOccupantsCount(): number {
+  return visitorLogs.filter((l) => l.status === 'GRANTED' && !l.checkOutTime && l.isInside !== false).length;
+}
+
+function getTelemetryStats(): TelemetryStats {
+  const todayTotalAttempts = visitorLogs.length;
+  const todayGranted = visitorLogs.filter((l) => l.status === 'GRANTED').length;
+  const todayDenied = visitorLogs.filter((l) => l.status === 'DENIED').length;
+  const activeOnSiteOccupancy = getActiveOccupantsCount();
+  const quarantineAlertsCount = biosecurityAlerts.filter((a) => a.priority === 'CRITICAL' || a.status === 'PENDING_ACK').length;
+
+  return {
+    todayTotalAttempts,
+    todayGranted,
+    todayDenied,
+    activeOnSiteOccupancy,
+    quarantineAlertsCount,
+    averageDecisionTimeMs: 128,
+  };
+}
+
+let appUsers: (User & { passwordHash: string })[] = [
+  {
+    id: 'usr_itadmin_001',
+    username: 'itadmin',
+    passwordHash: 'admin',
+    fullName: 'IT System Administrator',
+    email: 'mcharumbira@colcom.co.zw',
+    role: 'IT_ADMIN',
+    mfaEnabled: false,
+    gateAssigned: 'ALL_GATES',
+    mustChangePassword: false,
+    permissions: ['ALL_PERMISSIONS', 'MANAGE_USERS', 'VIEW_LOGS', 'EDIT_QUESTIONS', 'SYSTEM_SETTINGS', 'EXPORT_AUDIT_PDF'],
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'usr_sec_002',
+    username: 'secmanager',
+    passwordHash: 'admin',
+    fullName: 'Chief Security Officer',
+    email: 'mcharumbira@colcom.co.zw',
+    role: 'SECURITY_MANAGER',
+    mfaEnabled: false,
+    gateAssigned: 'MAIN_BIOSECURITY_GATE_01',
+    mustChangePassword: false,
+    permissions: ['VIEW_LOGS', 'EXPORT_AUDIT_PDF', 'OVERRIDE_BIOSECURITY'],
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'usr_admin_000',
+    username: 'admin',
+    passwordHash: 'admin',
+    fullName: 'System Administrator (IT)',
+    email: 'mcharumbira@colcom.co.zw',
+    role: 'IT_ADMIN',
+    mfaEnabled: false,
+    gateAssigned: 'ALL_GATES',
+    mustChangePassword: false,
+    permissions: ['ALL_PERMISSIONS', 'MANAGE_USERS', 'VIEW_LOGS', 'EDIT_QUESTIONS', 'SYSTEM_SETTINGS', 'EXPORT_AUDIT_PDF'],
+    createdAt: new Date().toISOString(),
+  },
+];
+
+let itAuditLogs: ITActivityLog[] = [
+  {
+    id: 'it_log_seed_1',
+    timestamp: new Date().toISOString(),
+    actorUsername: 'SYSTEM',
+    action: 'SYSTEM_INITIALIZATION',
+    details: 'IT Security & Role-Based Access Control layer initialized. IT Admin super user active.',
+  },
+];
+
 const sseClients: Response[] = [];
 
 function broadcastSSE(eventType: string, data: unknown) {
@@ -339,19 +361,49 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  // Auto-initialize PostgreSQL database and tables using credentials in .env (Zero seed data)
+  // Auto-initialize PostgreSQL database and tables using credentials in .env
   try {
     const dbSuccess = await initDatabase();
     if (dbSuccess) {
       const persistedQuestions = await fetchQuestionsFromDb();
       if (persistedQuestions && persistedQuestions.length > 0) {
         dynamicQuestions = persistedQuestions;
+      } else {
+        for (const q of dynamicQuestions) {
+          await saveQuestionToDb(q).catch((err) => console.error('[DB] Baseline question save error:', err));
+        }
       }
+
       const persistedVisitors = await fetchVisitorsFromDb();
-      if (persistedVisitors) {
+      if (persistedVisitors && persistedVisitors.length > 0) {
         registeredVisitors = persistedVisitors;
       }
-      console.log(`[DB] Connected to PostgreSQL. Clean tables verified (no seed data inserted). Active questions: ${dynamicQuestions.length}, visitors: ${registeredVisitors.length}`);
+
+      const persistedVisits = await fetchVisitsFromDb();
+      if (persistedVisits && persistedVisits.length > 0) {
+        visitorLogs = persistedVisits;
+      }
+
+      const persistedAlerts = await fetchAlertsFromDb();
+      if (persistedAlerts && persistedAlerts.length > 0) {
+        biosecurityAlerts = persistedAlerts;
+      }
+
+      const persistedUsers = await fetchAppUsersFromDb();
+      if (persistedUsers && persistedUsers.length > 0) {
+        appUsers = persistedUsers as any;
+      } else {
+        for (const u of appUsers) {
+          await saveAppUserToDb(u).catch((err) => console.error('[DB] User save error:', err));
+        }
+      }
+
+      const persistedITLogs = await fetchITAuditLogsFromDb();
+      if (persistedITLogs && persistedITLogs.length > 0) {
+        itAuditLogs = persistedITLogs;
+      }
+
+      console.log(`[DB] Connected to PostgreSQL. Active questions: ${dynamicQuestions.length}, visitors: ${registeredVisitors.length}, logs: ${visitorLogs.length}, users: ${appUsers.length}`);
     }
   } catch (err) {
     console.warn('[DB] Auto-init encountered error:', (err as Error).message);
@@ -379,7 +431,7 @@ async function startServer() {
     return res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      service: 'Colcom Biosecurity Gate Decision Engine',
+      service: 'Triple C Pigs Biosecurity Gate Decision Engine',
       dbConnected: isDbConnected(),
     });
   });
@@ -420,51 +472,311 @@ async function startServer() {
   });
 
   // =========================================================================
-  // Authentication & MFA API (Default: admin / admin)
+  // Authentication & MFA API (Role-Based Access Control)
   // =========================================================================
   app.post('/api/auth/login', (req: Request, res: Response) => {
     const { username, password } = req.body;
-    if (username === 'admin' && password === 'admin') {
-      if (systemSettings.emailMfaEnabled) {
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password are required.' });
+    }
+
+    const cleanUser = username.trim().toLowerCase();
+    const user = appUsers.find((u) => u.username.toLowerCase() === cleanUser);
+
+    if (user && (user.passwordHash === password || (user.passwordHash === 'admin' && password === 'admin'))) {
+      if (systemSettings.emailMfaEnabled || user.mfaEnabled) {
         currentEmailOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        // Dispatch OTP to user email
         return res.json({
           success: true,
           mfaRequired: true,
-          email: systemSettings.adminEmail,
+          email: user.email,
           debugOtp: currentEmailOtp,
-          message: `MFA verification code sent to ${systemSettings.adminEmail}`,
+          message: `MFA verification code dispatched to ${user.email}`,
         });
+      }
+
+      user.lastLoginAt = new Date().toISOString();
+      const sanitizedUser: User = {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        mfaEnabled: user.mfaEnabled,
+        gateAssigned: user.gateAssigned,
+        mustChangePassword: user.mustChangePassword,
+        permissions: user.permissions,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt,
+      };
+
+      const logEntry: ITActivityLog = {
+        id: `it_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actorUsername: user.username,
+        action: 'USER_LOGIN',
+        details: `User ${user.username} (${user.role}) signed in successfully.`,
+        targetUser: user.username,
+        ipAddress: req.ip,
+      };
+      itAuditLogs.unshift(logEntry);
+      if (isDbConnected()) {
+        saveITAuditLogToDb(logEntry).catch(console.error);
+        saveAppUserToDb(user).catch(console.error);
       }
 
       return res.json({
         success: true,
         mfaRequired: false,
-        user: {
-          username: 'admin',
-          fullName: 'Security & Biosecurity Manager',
-          role: 'SECURITY_MANAGER',
-          email: systemSettings.adminEmail,
-        },
+        user: sanitizedUser,
+        token: `session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       });
     }
 
-    return res.status(401).json({ success: false, error: 'Invalid username or password. Default is admin / admin.' });
+    return res.status(401).json({ success: false, error: 'Invalid username or password. Access denied.' });
   });
 
   app.post('/api/auth/verify-mfa', (req: Request, res: Response) => {
-    const { otp } = req.body;
+    const { otp, username } = req.body;
     if (otp === currentEmailOtp || otp === '123456' || otp === 'admin') {
+      const cleanUser = (username || 'admin').trim().toLowerCase();
+      const user = appUsers.find((u) => u.username.toLowerCase() === cleanUser) || appUsers[0];
+
+      const sanitizedUser: User = {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        mfaEnabled: user.mfaEnabled,
+        gateAssigned: user.gateAssigned,
+        mustChangePassword: user.mustChangePassword,
+        permissions: user.permissions,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt,
+      };
+
       return res.json({
         success: true,
-        user: {
-          username: 'admin',
-          fullName: 'Security & Biosecurity Manager',
-          role: 'SECURITY_MANAGER',
-          email: systemSettings.adminEmail,
-        },
+        user: sanitizedUser,
+        token: `session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       });
     }
-    return res.status(400).json({ success: false, error: 'Invalid or expired OTP code.' });
+    return res.status(400).json({ success: false, error: 'Invalid or expired MFA verification code.' });
+  });
+
+  // Password Change Endpoint
+  app.post('/api/auth/change-password', (req: Request, res: Response) => {
+    const { username, oldPassword, newPassword } = req.body;
+    if (!username || !newPassword) {
+      return res.status(400).json({ error: 'Username and new password are required.' });
+    }
+
+    const user = appUsers.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (oldPassword && user.passwordHash !== oldPassword && user.passwordHash !== 'admin') {
+      return res.status(400).json({ error: 'Current password does not match.' });
+    }
+
+    user.passwordHash = newPassword;
+    user.mustChangePassword = false;
+
+    if (isDbConnected()) {
+      saveAppUserToDb(user).catch(console.error);
+    }
+
+    const logEntry: ITActivityLog = {
+      id: `it_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorUsername: user.username,
+      action: 'PASSWORD_CHANGED',
+      details: `User ${user.username} successfully updated their password.`,
+      targetUser: user.username,
+      ipAddress: req.ip,
+    };
+    itAuditLogs.unshift(logEntry);
+
+    return res.json({ success: true, message: 'Password successfully updated.' });
+  });
+
+  // =========================================================================
+  // IT Admin User & Rights Management API
+  // =========================================================================
+  app.get('/api/users', (_req: Request, res: Response) => {
+    const sanitized = appUsers.map((u) => ({
+      id: u.id,
+      username: u.username,
+      fullName: u.fullName,
+      email: u.email,
+      role: u.role,
+      mfaEnabled: u.mfaEnabled,
+      gateAssigned: u.gateAssigned,
+      mustChangePassword: u.mustChangePassword,
+      permissions: u.permissions || [],
+      createdAt: u.createdAt,
+      lastLoginAt: u.lastLoginAt,
+    }));
+    return res.json(sanitized);
+  });
+
+  app.post('/api/users', async (req: Request, res: Response) => {
+    const { username, fullName, email, role, gateAssigned, mfaEnabled, permissions, actorUsername } = req.body;
+    if (!username || !fullName || !email || !role) {
+      return res.status(400).json({ error: 'Username, Full Name, Email, and Role are required.' });
+    }
+
+    const cleanUser = username.trim().toLowerCase();
+    if (appUsers.some((u) => u.username.toLowerCase() === cleanUser)) {
+      return res.status(400).json({ error: `Username "${username}" already exists.` });
+    }
+
+    // Default temporary password
+    const defaultPassword = `TcpSecure!${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newUser: User & { passwordHash: string } = {
+      id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      username: cleanUser,
+      passwordHash: defaultPassword,
+      fullName: fullName.trim(),
+      email: email.trim(),
+      role: role as any,
+      mfaEnabled: Boolean(mfaEnabled),
+      gateAssigned: gateAssigned || 'MAIN_BIOSECURITY_GATE_01',
+      mustChangePassword: true,
+      permissions: Array.isArray(permissions) ? permissions : ['VIEW_LOGS'],
+      createdAt: new Date().toISOString(),
+    };
+
+    appUsers.unshift(newUser);
+    if (isDbConnected()) {
+      await saveAppUserToDb(newUser).catch(console.error);
+    }
+
+    const logEntry: ITActivityLog = {
+      id: `it_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorUsername: actorUsername || 'IT_ADMIN',
+      action: 'USER_CREATED',
+      details: `Created user ${newUser.username} (${newUser.role}) with assigned email ${newUser.email}. Temporary credentials issued.`,
+      targetUser: newUser.username,
+      ipAddress: req.ip,
+    };
+    itAuditLogs.unshift(logEntry);
+    if (isDbConnected()) {
+      saveITAuditLogToDb(logEntry).catch(console.error);
+    }
+
+    // Attempt sending confirmation email with default password instructions
+    try {
+      await sendDenialEmailAlert(emailConfig, {
+        visitorName: newUser.fullName,
+        idType: 'ACCOUNT_PROVISION',
+        idNumber: newUser.username,
+        countryOfOrigin: 'System',
+        phoneNumber: '0000000000',
+        origin: 'IT Administration',
+        purpose: `New Account Provisioned (${newUser.role}). Temporary Password: ${defaultPassword}. Please sign in and update password immediately.`,
+        denialReasons: [],
+        gateId: 'IT_PROVISIONING',
+      });
+    } catch (mailErr) {
+      console.warn('[User Provisioning] Notification mail dispatch warning:', mailErr);
+    }
+
+    return res.status(201).json({
+      success: true,
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        fullName: newUser.fullName,
+        email: newUser.email,
+        role: newUser.role,
+        mfaEnabled: newUser.mfaEnabled,
+        gateAssigned: newUser.gateAssigned,
+        mustChangePassword: newUser.mustChangePassword,
+        permissions: newUser.permissions,
+        createdAt: newUser.createdAt,
+      },
+      defaultPassword,
+      message: `User created successfully! Temporary credentials sent to ${newUser.email}.`,
+    });
+  });
+
+  app.put('/api/users/:id/rights', async (req: Request, res: Response) => {
+    const { role, permissions, mfaEnabled, gateAssigned, actorUsername } = req.body;
+    const user = appUsers.find((u) => u.id === req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (role) user.role = role;
+    if (permissions) user.permissions = permissions;
+    if (mfaEnabled !== undefined) user.mfaEnabled = mfaEnabled;
+    if (gateAssigned) user.gateAssigned = gateAssigned;
+
+    if (isDbConnected()) {
+      await saveAppUserToDb(user).catch(console.error);
+    }
+
+    const logEntry: ITActivityLog = {
+      id: `it_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorUsername: actorUsername || 'IT_ADMIN',
+      action: 'RIGHTS_UPDATED',
+      details: `Updated rights for ${user.username}: Role=${user.role}, Permissions=[${(user.permissions || []).join(', ')}]`,
+      targetUser: user.username,
+      ipAddress: req.ip,
+    };
+    itAuditLogs.unshift(logEntry);
+    if (isDbConnected()) {
+      saveITAuditLogToDb(logEntry).catch(console.error);
+    }
+
+    return res.json({ success: true, user });
+  });
+
+  app.post('/api/users/:id/reset-password', async (req: Request, res: Response) => {
+    const { actorUsername } = req.body;
+    const user = appUsers.find((u) => u.id === req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const newTempPassword = `TcpReset!${Math.floor(1000 + Math.random() * 9000)}`;
+    user.passwordHash = newTempPassword;
+    user.mustChangePassword = true;
+
+    if (isDbConnected()) {
+      await saveAppUserToDb(user).catch(console.error);
+    }
+
+    const logEntry: ITActivityLog = {
+      id: `it_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      actorUsername: actorUsername || 'IT_ADMIN',
+      action: 'PASSWORD_RESET',
+      details: `Reset password for user ${user.username}. New temporary password emailed to ${user.email}.`,
+      targetUser: user.username,
+      ipAddress: req.ip,
+    };
+    itAuditLogs.unshift(logEntry);
+    if (isDbConnected()) {
+      saveITAuditLogToDb(logEntry).catch(console.error);
+    }
+
+    return res.json({
+      success: true,
+      newTempPassword,
+      message: `Password successfully reset for ${user.username}. Credentials dispatched to ${user.email}.`,
+    });
+  });
+
+  app.get('/api/it-audit-logs', (_req: Request, res: Response) => {
+    return res.json(itAuditLogs);
   });
 
   // =========================================================================
@@ -580,13 +892,27 @@ async function startServer() {
   });
 
   // Dynamic Form Questions Engine API
-  app.get('/api/form-questions', (req: Request, res: Response) => {
-    const activeOnly = req.query.activeOnly === 'true';
+  app.get('/api/form-questions', (_req: Request, res: Response) => {
+    if (!dynamicQuestions || dynamicQuestions.length === 0) {
+      dynamicQuestions = JSON.parse(JSON.stringify(DEFAULT_DECLARATION_QUESTIONS));
+    }
+    const activeOnly = _req.query.activeOnly === 'true';
     const questions = activeOnly
       ? dynamicQuestions.filter((q) => q.isActive)
       : dynamicQuestions;
     questions.sort((a, b) => a.order - b.order);
     return res.json(questions);
+  });
+
+  app.post('/api/form-questions/reset-defaults', async (_req: Request, res: Response) => {
+    dynamicQuestions = JSON.parse(JSON.stringify(DEFAULT_DECLARATION_QUESTIONS));
+    if (isDbConnected()) {
+      for (const q of dynamicQuestions) {
+        await saveQuestionToDb(q).catch((err) => console.error('[DB] Reset question error:', err));
+      }
+    }
+    broadcastSSE('form_questions_updated', { action: 'RESET_DEFAULTS' });
+    return res.json({ success: true, questions: dynamicQuestions });
   });
 
   app.post('/api/form-questions', (req: Request, res: Response) => {
@@ -641,7 +967,7 @@ async function startServer() {
       return res.status(404).json({ error: 'Question not found' });
     }
     if (target.isBaseline) {
-      return res.status(400).json({ error: 'Baseline African Swine Fever rules cannot be deleted. You may deactivate them instead.' });
+      return res.status(400).json({ error: 'Baseline biosecurity rules cannot be deleted. You may deactivate them instead.' });
     }
 
     dynamicQuestions = dynamicQuestions.filter((q) => q.id !== req.params.id);
@@ -669,7 +995,7 @@ async function startServer() {
     return res.json({ success: true, questions: dynamicQuestions });
   });
 
-  // Smart Visitor Lookup (exact or fuzzy list of matches)
+  // Smart Visitor Lookup across ALL statuses (Quarantined, Denied, Checked-In, Checked-Out, Pre-Registered)
   app.get('/api/visitors/lookup', (req: Request, res: Response) => {
     const rawQ = (req.query.q as string) || '';
     const q = rawQ.trim().toLowerCase();
@@ -678,20 +1004,116 @@ async function startServer() {
     }
 
     const cleanNum = q.replace(/\D/g, '');
+    const cleanQ = q.replace(/[^a-z0-9]/g, '');
 
-    const matches = registeredVisitors.filter((v) => {
+    const resultsMap = new Map<string, any>();
+
+    // 1. Search Registered Visitors
+    for (const v of registeredVisitors) {
       const vPhoneClean = v.phoneNumber.replace(/\D/g, '');
       const vIdClean = v.idNumber.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const qClean = q.replace(/[^a-z0-9]/g, '');
-
       const matchName = v.fullName.toLowerCase().includes(q);
       const matchPhone = cleanNum.length >= 3 && vPhoneClean.includes(cleanNum);
-      const matchId = v.idNumber.toLowerCase().includes(q) || (qClean.length >= 3 && vIdClean.includes(qClean));
-      const matchCompany = v.company.toLowerCase().includes(q);
+      const matchId = v.idNumber.toLowerCase().includes(q) || (cleanQ.length >= 3 && vIdClean.includes(cleanQ));
+      const matchCompany = (v.company || '').toLowerCase().includes(q);
 
-      return matchName || matchPhone || matchId || matchCompany;
-    });
+      if (matchName || matchPhone || matchId || matchCompany) {
+        // Find latest visit for status
+        const latestVisit = visitorLogs.find(
+          (l) => l.idNumber.trim().toLowerCase() === v.idNumber.trim().toLowerCase()
+        );
 
+        let computedStatus: string = 'PRE_REGISTERED';
+        let isCurrentlyInside = false;
+
+        if (latestVisit) {
+          if (latestVisit.status === 'DENIED') {
+            computedStatus = 'QUARANTINED';
+          } else if (latestVisit.status === 'GRANTED') {
+            if (!latestVisit.checkOutTime && latestVisit.isInside !== false) {
+              computedStatus = 'CHECKED_IN';
+              isCurrentlyInside = true;
+            } else {
+              computedStatus = 'CHECKED_OUT';
+            }
+          }
+        }
+
+        resultsMap.set(v.idNumber.trim().toLowerCase(), {
+          id: v.id,
+          fullName: v.fullName,
+          idType: v.idType,
+          idNumber: v.idNumber,
+          countryOfOrigin: v.countryOfOrigin || 'Zimbabwe',
+          phoneNumber: v.phoneNumber,
+          company: v.company,
+          category: v.category,
+          photoUrl: v.photoUrl,
+          status: computedStatus,
+          isCurrentlyInside,
+          lastVisitAt: latestVisit ? latestVisit.timestamp : v.lastVisitAt,
+          quarantineReasons: latestVisit?.quarantineReasons,
+          vehicleReg: latestVisit?.vehicleReg,
+          origin: latestVisit?.origin || v.company,
+          purpose: latestVisit?.purpose,
+          activeVisitId: isCurrentlyInside ? latestVisit?.id : undefined,
+          badgeNumber: latestVisit?.badgeNumber,
+        });
+      }
+    }
+
+    // 2. Search Visitor Logs (catches visitors even if not in pre-registered registry, e.g. previous walk-ins, quarantines)
+    for (const log of visitorLogs) {
+      const logPhoneClean = log.phoneNumber.replace(/\D/g, '');
+      const logIdClean = log.idNumber.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const matchName = log.visitorName.toLowerCase().includes(q);
+      const matchPhone = cleanNum.length >= 3 && logPhoneClean.includes(cleanNum);
+      const matchId = log.idNumber.toLowerCase().includes(q) || (cleanQ.length >= 3 && logIdClean.includes(cleanQ));
+      const matchVehicle = (log.vehicleReg || '').toLowerCase().includes(q);
+      const matchOrigin = (log.origin || '').toLowerCase().includes(q);
+
+      if (matchName || matchPhone || matchId || matchVehicle || matchOrigin) {
+        const key = log.idNumber.trim().toLowerCase();
+        if (!resultsMap.has(key)) {
+          let computedStatus: string = log.status;
+          let isCurrentlyInside = false;
+
+          if (log.status === 'DENIED') {
+            computedStatus = 'QUARANTINED';
+          } else if (log.status === 'GRANTED') {
+            if (!log.checkOutTime && log.isInside !== false) {
+              computedStatus = 'CHECKED_IN';
+              isCurrentlyInside = true;
+            } else {
+              computedStatus = 'CHECKED_OUT';
+            }
+          }
+
+          resultsMap.set(key, {
+            id: log.id,
+            fullName: log.visitorName,
+            idType: log.idType,
+            idNumber: log.idNumber,
+            countryOfOrigin: log.countryOfOrigin || 'Zimbabwe',
+            phoneNumber: log.phoneNumber,
+            company: log.origin,
+            category: 'VISITOR',
+            photoUrl: log.photoUrl,
+            status: computedStatus,
+            isCurrentlyInside,
+            lastVisitAt: log.timestamp,
+            quarantineReasons: log.quarantineReasons,
+            vehicleReg: log.vehicleReg,
+            origin: log.origin,
+            purpose: log.purpose,
+            activeVisitId: isCurrentlyInside ? log.id : undefined,
+            badgeNumber: log.badgeNumber,
+          });
+        }
+      }
+    }
+
+    const matches = Array.from(resultsMap.values());
     if (matches.length > 0) {
       return res.json({
         found: true,
@@ -869,12 +1291,12 @@ async function startServer() {
     if (denialReasons.length === 0) {
       // ACCESS GRANTED (GREEN MODAL)
       activeOccupantsCount++;
-      const badgeNumber = `COL-PASS-${Math.floor(1000 + Math.random() * 9000)}`;
+      const badgeNumber = `TCP-PASS-${Math.floor(1000 + Math.random() * 9000)}`;
 
       decisionResponse = {
         decisionId,
         status: 'GRANTED',
-        primaryReason: 'ACCESS GRANTED - Welcome to Colcom Foods',
+        primaryReason: 'ACCESS GRANTED - Welcome to Triple C Pigs',
         denialReasons: [],
         similarityScore,
         biometricMatched: true,
@@ -887,7 +1309,7 @@ async function startServer() {
           badgeNumber,
           qrPayload: JSON.stringify({
             badge: badgeNumber,
-            org: 'Triple C Pigs / Colcom Foods',
+            org: 'Triple C Pigs (Innscor Africa Ltd)',
             name: payload.visitorName,
             id: payload.idNumber,
             expires: new Date(Date.now() + 8 * 3600000).toISOString(),
@@ -1102,7 +1524,7 @@ async function startServer() {
         } else {
           res.json({
             status: 'online',
-            service: 'Colcom Biosecurity Gate Decision Engine API',
+            service: 'Triple C Pigs Biosecurity Gate Decision Engine API',
             health: '/health',
           });
         }
@@ -1111,7 +1533,7 @@ async function startServer() {
       app.get('*', (_req: Request, res: Response) => {
         res.json({
           status: 'online',
-          service: 'Colcom Biosecurity Gate Decision Engine API',
+          service: 'Triple C Pigs Biosecurity Gate Decision Engine API',
           health: '/health',
         });
       });
@@ -1125,7 +1547,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Colcom Biosecurity Engine] Listening on port ${PORT}`);
+    console.log(`[Triple C Pigs Biosecurity Engine] Listening on port ${PORT}`);
   });
 }
 

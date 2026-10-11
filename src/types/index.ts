@@ -4,9 +4,9 @@
  * Shared Types & Domain Models
  */
 
-export type Role = 'GATE_OPERATOR' | 'BIOSECURITY_OFFICER' | 'SECURITY_MANAGER' | 'AUDITOR';
+export type Role = 'IT_ADMIN' | 'SECURITY_MANAGER' | 'BIOSECURITY_OFFICER' | 'GATE_OPERATOR' | 'AUDITOR';
 
-export type AccessStatus = 'GRANTED' | 'DENIED';
+export type AccessStatus = 'GRANTED' | 'DENIED' | 'CHECKED_OUT';
 
 export type DenialSeverity = 'CRITICAL_QUARANTINE' | 'REGISTRATION_HOLD' | 'BIOMETRIC_MISMATCH' | 'IDENTITY_ERROR';
 
@@ -21,7 +21,21 @@ export interface User {
   fullName: string;
   role: Role;
   mfaEnabled: boolean;
-  gateAssigned: string;
+  gateAssigned?: string;
+  mustChangePassword?: boolean;
+  permissions?: string[];
+  createdAt?: string;
+  lastLoginAt?: string;
+}
+
+export interface ITActivityLog {
+  id: string;
+  timestamp: string;
+  actorUsername: string;
+  action: string;
+  details: string;
+  targetUser?: string;
+  ipAddress?: string;
 }
 
 export interface RegisteredVisitor {
@@ -68,6 +82,7 @@ export interface GateEntryPayload {
   purposeOfVisit: string;
   fromOrigin: string;
   dynamicResponses: Record<string, boolean | string>;
+  comments?: string;
   digitalSignature?: string;
   capturedFaceImage?: string; // Optional photo
   capturedEmbedding?: number[]; // Optional 512-dim embedding
@@ -144,7 +159,10 @@ export interface GateLogRecord {
   gateId: string;
   badgeNumber?: string;
   photoUrl?: string;
+  comments?: string;
   syncedFromOffline?: boolean;
+  checkOutTime?: string;
+  isInside?: boolean;
 }
 
 export interface TelemetryStats {

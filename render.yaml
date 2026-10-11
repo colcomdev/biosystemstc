@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: colcom-biosecurity-backend
+    name: biosystemstcs
     runtime: node
     plan: free
-    buildCommand: npm install --legacy-peer-deps
+    buildCommand: npm install --legacy-peer-deps && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -16,6 +16,6 @@ services:
         value: "https://szpsubszfcegduotdziq.supabase.co"
       - key: SUPABASE_ANON_KEY
         value: "sb_publishable_LWJVUZPgksQpdnBu3AEyXA_NuboHa49"
-      # Set DATABASE_URL in Render Dashboard: postgresql://postgres:[YOUR-PASSWORD]@db.szpsubszfcegduotdziq.supabase.co:5432/postgres
+      # Set DATABASE_URL in Render Dashboard: postgresql://postgres.szpsubszfcegduotdziq:[YOUR-PASSWORD]@aws-1-eu-west-3.pooler.supabase.com:6543/postgres?pgbouncer=true
       - key: DATABASE_URL
         sync: false

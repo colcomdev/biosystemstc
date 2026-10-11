@@ -50,6 +50,7 @@ import {
 } from '../../types';
 import { DigitalSignaturePad } from './DigitalSignaturePad';
 import { apiUrl } from '../../lib/api';
+import { DEFAULT_DECLARATION_QUESTIONS, getInitialDeclarationAnswers } from '../../data/defaultQuestions';
 
 const POPULAR_COUNTRIES = [
   'Zimbabwe',
@@ -87,9 +88,11 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
   const [purposeOfVisit, setPurposeOfVisit] = useState('');
   const [fromOrigin, setFromOrigin] = useState('');
 
-  // Dynamic Form Questions State
-  const [questions, setQuestions] = useState<DynamicFormQuestion[]>([]);
-  const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, boolean | string>>({});
+  // Dynamic Form Questions State (Default biosecurity questions so never blank)
+  const [questions, setQuestions] = useState<DynamicFormQuestion[]>(DEFAULT_DECLARATION_QUESTIONS);
+  const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, boolean | string>>(
+    () => getInitialDeclarationAnswers(DEFAULT_DECLARATION_QUESTIONS)
+  );
 
   // Digital Signature & Optional Photo
   const [digitalSignature, setDigitalSignature] = useState('');
@@ -118,23 +121,25 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
       const res = await fetch(apiUrl('/api/form-questions?activeOnly=true'));
       if (res.ok) {
         const data: DynamicFormQuestion[] = await res.json();
-        setQuestions(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setQuestions(data);
 
-        // Pre-initialize baseline default answers for convenient gate workflow
-        const initialAnswers: Record<string, boolean | string> = {};
-        data.forEach((q) => {
-          if (q.type === 'BOOLEAN') {
-            if (q.prompt.toLowerCase().includes('register')) {
-              initialAnswers[q.id] = true; // Default: assumed on register until checked
-            } else {
-              initialAnswers[q.id] = false; // Default: clean (no animal contact, no meat)
+          // Pre-initialize baseline default answers for convenient gate workflow
+          const initialAnswers: Record<string, boolean | string> = {};
+          data.forEach((q) => {
+            if (q.type === 'BOOLEAN') {
+              if (q.prompt.toLowerCase().includes('register')) {
+                initialAnswers[q.id] = true; // Default: assumed on register until checked
+              } else {
+                initialAnswers[q.id] = false; // Default: clean (no animal contact, no meat)
+              }
             }
-          }
-        });
-        setDynamicAnswers(initialAnswers);
+          });
+          setDynamicAnswers((prev) => ({ ...initialAnswers, ...prev }));
+        }
       }
     } catch (err) {
-      console.error('Failed to load active questions', err);
+      console.warn('Using baseline African Swine Fever questions:', err);
     }
   };
 
@@ -601,7 +606,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
               maxLength={3500}
               value={purposeOfVisit}
               onChange={(e) => setPurposeOfVisit(e.target.value)}
-              placeholder="State destination unit within INNSCOR AFRICA LTD(Colcom Foods) T/A TRIPLE C PIGS..."
+              placeholder="State destination unit within Triple C Pigs (Innscor Africa Ltd)..."
               className={`w-full px-3.5 py-2 rounded-xl text-sm border outline-none resize-none transition ${
                 isDark
                   ? 'bg-slate-950 border-slate-700 text-white focus:border-emerald-500'
