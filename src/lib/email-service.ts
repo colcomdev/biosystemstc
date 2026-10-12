@@ -5,14 +5,15 @@
  */
 
 import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { EmailConfig, EmailDispatchLog, DenialReasonDetail, GateLogRecord, TelemetryStats } from '../types';
 import { generateEodPdfReport } from './pdf-report-generator';
 
 export const emailDispatchLogs: EmailDispatchLog[] = [];
 
-let cachedTransporter: nodemailer.Transporter | null = null;
+let cachedTransporter: Transporter | null = null;
 
-async function getEmailTransporter(config: EmailConfig): Promise<nodemailer.Transporter> {
+async function getEmailTransporter(config: EmailConfig): Promise<Transporter> {
   // If user provided a custom live SMTP host (e.g., from settings or env)
   const envHost = process.env.SMTP_HOST;
   const envUser = process.env.SMTP_USER;

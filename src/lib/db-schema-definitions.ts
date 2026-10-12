@@ -1,6 +1,6 @@
 /**
  * PostgreSQL Database Architecture & Schema Specification
- * Colcom Foods (Triple C Pigs) - African Swine Fever Biosecurity Gate Control
+ * INNSCOR AFRICA LTD (Triple C Pigs) - Swine Biosecurity Gate Control
  * 
  * Includes:
  * - Dynamic Form Engine: form_templates, form_questions, visit_responses

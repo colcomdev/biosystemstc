@@ -806,7 +806,7 @@ async function startServer() {
       todayTotalAttempts,
       todayGranted,
       todayDenied,
-      activeOnSiteOccupancy: activeOccupantsCount,
+      activeOnSiteOccupancy: getActiveOccupantsCount(),
       quarantineAlertsCount,
       averageDecisionTimeMs: 135,
     };
@@ -851,7 +851,7 @@ async function startServer() {
       todayTotalAttempts,
       todayGranted,
       todayDenied,
-      activeOnSiteOccupancy: activeOccupantsCount,
+      activeOnSiteOccupancy: getActiveOccupantsCount(),
       quarantineAlertsCount,
       averageDecisionTimeMs: 135,
     };
@@ -877,7 +877,7 @@ async function startServer() {
     const logoBase64 = getLogoBase64();
     const pdfBuffer = generateEodPdfReport(stats, visitorLogs, undefined, logoBase64);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="colcom_eod_biosecurity_report_${new Date().toISOString().slice(0, 10)}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="triple_c_pigs_eod_biosecurity_report_${new Date().toISOString().slice(0, 10)}.pdf"`);
     return res.send(Buffer.from(pdfBuffer));
   });
 
@@ -1211,8 +1211,25 @@ async function startServer() {
       });
     }
 
-    // 2. Evaluate Dynamic Form Responses
     const denialReasons: DenialReasonDetail[] = [];
+
+    // 2. Duplicate Check-in Prevention (ID/Passport Unique Verification)
+    const alreadyInsideVisitor = visitorLogs.find(
+      (l) =>
+        l.idNumber.trim().toLowerCase() === payload.idNumber.trim().toLowerCase() &&
+        l.status === 'GRANTED' &&
+        !l.checkOutTime &&
+        l.isInside !== false
+    );
+    if (alreadyInsideVisitor) {
+      denialReasons.push({
+        code: 'ALREADY_CHECKED_IN',
+        severity: 'REGISTRATION_HOLD',
+        description: `DUPLICATE CHECK-IN PREVENTED: Visitor with ID/Passport "${payload.idNumber}" is already checked-in inside the facility (Badge: ${alreadyInsideVisitor.badgeNumber || 'Active'}, Entry: ${new Date(alreadyInsideVisitor.timestamp).toLocaleTimeString()}). They cannot check in twice; check-out is required first.`,
+      });
+    }
+
+    // 3. Evaluate Dynamic Form Responses
     const responses = payload.dynamicResponses || {};
 
     const activeQuestions = dynamicQuestions.filter((q) => q.isActive);
@@ -1290,7 +1307,6 @@ async function startServer() {
 
     if (denialReasons.length === 0) {
       // ACCESS GRANTED (GREEN MODAL)
-      activeOccupantsCount++;
       const badgeNumber = `TCP-PASS-${Math.floor(1000 + Math.random() * 9000)}`;
 
       decisionResponse = {
@@ -1333,6 +1349,7 @@ async function startServer() {
         vehicleReg: payload.vehicleRegNumber,
         origin: payload.fromOrigin,
         purpose: payload.purposeOfVisit,
+        comments: payload.comments,
         status: 'GRANTED',
         similarityScore,
         operatorName: 'Gate Operator (Field)',
@@ -1340,6 +1357,7 @@ async function startServer() {
         badgeNumber,
         photoUrl: payload.capturedFaceImage,
         syncedFromOffline: payload.isOfflineSubmission,
+        isInside: true,
       });
 
       if (isDbConnected()) {
@@ -1348,14 +1366,14 @@ async function startServer() {
 
       broadcastSSE('telemetry_update', {
         action: 'VISITOR_CHECKED_IN',
-        activeOccupants: activeOccupantsCount,
+        activeOccupants: getActiveOccupantsCount(),
         visitorName: payload.visitorName,
       });
     } else {
       // ACCESS DENIED / BIOSECURITY HOLD (RED MODAL)
       const isCriticalQuarantine = denialReasons.some((d) => d.severity === 'CRITICAL_QUARANTINE');
       const primaryReason = isCriticalQuarantine
-        ? 'ACCESS DENIED / BIOSECURITY QUARANTINE HOLD: African Swine Fever / Meat Contraband Vector'
+        ? 'ACCESS DENIED / BIOSECURITY QUARANTINE HOLD: High-Risk Pathogen & Contraband Vector'
         : 'ACCESS DENIED / REGISTRATION HOLD: Biosecurity Verification Requirements Not Met';
 
       // Automated Email Alert Dispatcher Trigger
@@ -1412,6 +1430,7 @@ async function startServer() {
         vehicleReg: payload.vehicleRegNumber,
         origin: payload.fromOrigin,
         purpose: payload.purposeOfVisit,
+        comments: payload.comments,
         status: 'DENIED',
         similarityScore,
         quarantineReasons: denialReasons.map((d) => d.description),
@@ -1419,6 +1438,7 @@ async function startServer() {
         gateId: payload.gateId || 'MAIN_BIOSECURITY_GATE_01',
         photoUrl: payload.capturedFaceImage,
         syncedFromOffline: payload.isOfflineSubmission,
+        isInside: false,
       });
 
       const alertId = `alt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -1453,22 +1473,79 @@ async function startServer() {
     return res.status(200).json(decisionResponse);
   });
 
-  // Stats & Logs
-  app.get('/api/stats', (_req: Request, res: Response) => {
-    const todayTotalAttempts = visitorLogs.length;
-    const todayGranted = visitorLogs.filter((l) => l.status === 'GRANTED').length;
-    const todayDenied = visitorLogs.filter((l) => l.status === 'DENIED').length;
-    const quarantineAlertsCount = biosecurityAlerts.filter((a) => a.priority === 'CRITICAL').length;
+  // =========================================================================
+  // Gate Check-Out Action Endpoint
+  // =========================================================================
+  app.post('/api/gate/check-out', async (req: Request, res: Response) => {
+    const { idNumber, phoneNumber, visitId, operatorName } = req.body;
+    if (!idNumber && !phoneNumber && !visitId) {
+      return res.status(400).json({ error: 'idNumber, phoneNumber, or visitId is required for check-out.' });
+    }
 
-    const stats: TelemetryStats = {
-      todayTotalAttempts,
-      todayGranted,
-      todayDenied,
-      activeOnSiteOccupancy: activeOccupantsCount,
-      quarantineAlertsCount,
-      averageDecisionTimeMs: 135,
-    };
-    return res.json(stats);
+    const cleanId = (idNumber || '').trim().toLowerCase();
+    const cleanPhone = (phoneNumber || '').replace(/\D/g, '');
+
+    // Find the currently active inside visit
+    const activeVisit = visitorLogs.find((l) => {
+      if (visitId && l.id === visitId) return true;
+      const matchId = cleanId && l.idNumber.trim().toLowerCase() === cleanId;
+      const matchPhone = cleanPhone && l.phoneNumber.replace(/\D/g, '') === cleanPhone;
+      return (matchId || matchPhone) && l.status === 'GRANTED' && !l.checkOutTime && l.isInside !== false;
+    });
+
+    if (!activeVisit) {
+      return res.status(404).json({
+        success: false,
+        error: `No active check-in found. The visitor is not currently checked-in inside the facility. Double check-out is prevented.`,
+      });
+    }
+
+    if (activeVisit.checkOutTime || activeVisit.isInside === false) {
+      return res.status(400).json({
+        success: false,
+        error: `Visitor ${activeVisit.visitorName} was already checked out at ${new Date(activeVisit.checkOutTime || '').toLocaleTimeString()}.`,
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    activeVisit.checkOutTime = nowIso;
+    activeVisit.isInside = false;
+    activeVisit.status = 'CHECKED_OUT';
+
+    if (isDbConnected()) {
+      await updateVisitCheckOutInDb(activeVisit.id, nowIso).catch((err) =>
+        console.error('[DB] Check-out update error:', err)
+      );
+    }
+
+    const currentOccupants = getActiveOccupantsCount();
+    broadcastSSE('telemetry_update', {
+      action: 'VISITOR_CHECKED_OUT',
+      activeOccupants: currentOccupants,
+      visitorName: activeVisit.visitorName,
+      badgeNumber: activeVisit.badgeNumber,
+      checkOutTime: nowIso,
+    });
+
+    return res.json({
+      success: true,
+      message: `Visitor ${activeVisit.visitorName} (Badge: ${activeVisit.badgeNumber || 'N/A'}) has been successfully checked out.`,
+      visit: activeVisit,
+      activeOccupancy: currentOccupants,
+    });
+  });
+
+  // Dynamic Telemetry & Stats (Directly from DB or real memory calculations)
+  app.get('/api/stats', async (_req: Request, res: Response) => {
+    if (isDbConnected()) {
+      try {
+        const dbStats = await fetchRealTelemetryFromDb();
+        return res.json(dbStats);
+      } catch (err) {
+        console.warn('[Stats] Failed to fetch real telemetry from DB, falling back to memory state:', err);
+      }
+    }
+    return res.json(getTelemetryStats());
   });
 
   app.get('/api/logs', (_req: Request, res: Response) => {

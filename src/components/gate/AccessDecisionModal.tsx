@@ -1,7 +1,7 @@
 /**
  * Dynamic Access Decision Pop-Up Modal
  * Full-screen Green/Red Overlay for Handheld Mobile Gate Scanners
- * Enforces African Swine Fever / Foot-and-Mouth Biosecurity Quarantine Decisions
+ * Enforces Triple C Pigs Biosecurity Quarantine Decisions
  */
 
 import React, { useEffect, useState } from 'react';
@@ -279,7 +279,7 @@ export const AccessDecisionModal: React.FC<AccessDecisionModalProps> = ({
 
                 <p className="text-xs text-rose-200/90 leading-relaxed mb-4">
                   The gate decision engine evaluated biosecurity questions and identity parameters against
-                  national African Swine Fever (ASF) and Foot-and-Mouth Disease (FMD) containment
+                  strict Triple C Pigs swine herd biosecurity containment
                   protocols. The following mandatory rule violations occurred:
                 </p>
 

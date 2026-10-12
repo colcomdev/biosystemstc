@@ -254,7 +254,7 @@ export const ReportEmailConfigView: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Automatically fires immediate alert emails containing visitor identification, African Swine Fever violation details, and timestamp whenever gate access is denied.
+                  Automatically fires immediate alert emails containing visitor identification, biosecurity quarantine violation details, and timestamp whenever gate access is denied.
                 </p>
               </div>
 

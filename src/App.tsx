@@ -16,6 +16,16 @@ import { apiUrl, resolveAssetUrl } from './lib/api';
 
 const INITIAL_USERS: User[] = [
   {
+    id: 'usr_000',
+    username: 'itadmin',
+    email: 'mcharumbira@colcom.co.zw',
+    fullName: 'IT System Administrator',
+    role: 'IT_ADMIN',
+    mfaEnabled: false,
+    gateAssigned: 'ALL_GATES',
+    permissions: ['ALL_PERMISSIONS', 'MANAGE_USERS', 'VIEW_LOGS', 'EDIT_QUESTIONS', 'SYSTEM_SETTINGS', 'EXPORT_AUDIT_PDF'],
+  },
+  {
     id: 'usr_001',
     username: 'gate_operator',
     email: 'gate1.security@triplecpigs.co.zw',
@@ -55,10 +65,21 @@ const INITIAL_USERS: User[] = [
 
 function AppInner() {
   const { theme } = useTheme();
-  const [currentView, setCurrentView] = useState<'GATE' | 'ADMIN'>('GATE');
-  const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
+  const [currentView, setCurrentView] = useState<'GATE' | 'ADMIN'>(() => {
+    return (localStorage.getItem('tcp_app_view') as any) || 'GATE';
+  });
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    const savedId = localStorage.getItem('tcp_current_user_id');
+    const matched = INITIAL_USERS.find((u) => u.id === savedId);
+    return matched || INITIAL_USERS[0];
+  });
   const [systemUsers, setSystemUsers] = useState<User[]>(INITIAL_USERS);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  const handleSetView = (view: 'GATE' | 'ADMIN') => {
+    setCurrentView(view);
+    localStorage.setItem('tcp_app_view', view);
+  };
 
   useEffect(() => {
     // Fetch users
@@ -66,7 +87,11 @@ function AppInner() {
       .then((res) => (res.ok ? res.json() : INITIAL_USERS))
       .then((users) => {
         setSystemUsers(users);
-        if (users.length > 0 && !currentUser) {
+        const savedId = localStorage.getItem('tcp_current_user_id');
+        const matched = users.find((u: User) => u.id === savedId);
+        if (matched) {
+          setCurrentUser(matched);
+        } else if (users.length > 0 && !currentUser) {
           setCurrentUser(users[0]);
         }
       })
@@ -104,10 +129,11 @@ function AppInner() {
 
   const handleSwitchUser = (user: User) => {
     setCurrentUser(user);
+    localStorage.setItem('tcp_current_user_id', user.id);
     if (user.role === 'GATE_OPERATOR') {
-      setCurrentView('GATE');
+      handleSetView('GATE');
     } else {
-      setCurrentView('ADMIN');
+      handleSetView('ADMIN');
     }
   };
 
@@ -118,7 +144,7 @@ function AppInner() {
       {/* Top Navbar with Dynamic Logo & Theme Switcher */}
       <Navbar
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={handleSetView}
         currentUser={currentUser}
         logoUrl={logoUrl}
       />
@@ -138,7 +164,7 @@ function AppInner() {
             currentUser={currentUser}
             onSwitchRole={handleSwitchUser}
             systemUsers={systemUsers}
-            onExitAdmin={() => setCurrentView('GATE')}
+            onExitAdmin={() => handleSetView('GATE')}
             logoUrl={logoUrl}
             onLogoChange={setLogoUrl}
           />

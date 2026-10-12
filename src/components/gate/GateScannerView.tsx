@@ -80,6 +80,8 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
   const [vehicleRegNumber, setVehicleRegNumber] = useState('');
   const [purposeOfVisit, setPurposeOfVisit] = useState('');
   const [fromOrigin, setFromOrigin] = useState('');
+  const [comments, setComments] = useState('');
+  const [activeCheckedInVisitor, setActiveCheckedInVisitor] = useState<any | null>(null);
 
   // Dynamic Form Questions (Pre-populated with default biosecurity questions so never blank)
   const [questions, setQuestions] = useState<DynamicFormQuestion[]>(DEFAULT_DECLARATION_QUESTIONS);
@@ -110,6 +112,58 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  // Restore draft on refresh so user never loses typed data
+  useEffect(() => {
+    try {
+      const draft = localStorage.getItem('tcp_gate_draft_form');
+      if (draft) {
+        const d = JSON.parse(draft);
+        if (d.visitorName) setVisitorName(d.visitorName);
+        if (d.idType) setIdType(d.idType);
+        if (d.idNumber) setIdNumber(d.idNumber);
+        if (d.countryOfOrigin) setCountryOfOrigin(d.countryOfOrigin);
+        if (d.visitorContactNumber) setVisitorContactNumber(d.visitorContactNumber);
+        if (d.vehicleRegNumber) setVehicleRegNumber(d.vehicleRegNumber);
+        if (d.purposeOfVisit) setPurposeOfVisit(d.purposeOfVisit);
+        if (d.fromOrigin) setFromOrigin(d.fromOrigin);
+        if (d.comments) setComments(d.comments);
+        if (d.dynamicAnswers) setDynamicAnswers(d.dynamicAnswers);
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }, []);
+
+  // Save draft whenever user types
+  useEffect(() => {
+    if (visitorName || idNumber || visitorContactNumber || fromOrigin || purposeOfVisit || comments) {
+      const draft = {
+        visitorName,
+        idType,
+        idNumber,
+        countryOfOrigin,
+        visitorContactNumber,
+        vehicleRegNumber,
+        purposeOfVisit,
+        fromOrigin,
+        comments,
+        dynamicAnswers,
+      };
+      localStorage.setItem('tcp_gate_draft_form', JSON.stringify(draft));
+    }
+  }, [
+    visitorName,
+    idType,
+    idNumber,
+    countryOfOrigin,
+    visitorContactNumber,
+    vehicleRegNumber,
+    purposeOfVisit,
+    fromOrigin,
+    comments,
+    dynamicAnswers,
+  ]);
 
   useEffect(() => {
     fetchActiveQuestions();
@@ -212,19 +266,15 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
         }
       }
     } catch (err) {
-      console.warn('Using baseline African Swine Fever declaration questions:', err);
+      console.warn('Using baseline swine biosecurity declaration questions:', err);
     }
   };
 
   // Selection & Auto-Fill Handler
-  const handleSelectVisitor = (visitor: RegisteredVisitor) => {
+  const handleSelectVisitor = (visitor: any) => {
     applyVisitorToForm(visitor);
     setLookupQuery(visitor.fullName);
     setShowSuggestions(false);
-    setLookupFeedback({
-      message: `Pre-registered visitor verified & auto-filled: ${visitor.fullName} (${visitor.company})`,
-      isSuccess: true,
-    });
   };
 
   // Smart Lookup Trigger
@@ -238,15 +288,13 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
       const res = await fetch(apiUrl(`/api/visitors/lookup?q=${encodeURIComponent(query)}`));
       if (res.ok) {
         const data = await res.json();
-        if (data.found && data.visitor) {
-          applyVisitorToForm(data.visitor);
-          setLookupFeedback({
-            message: `Pre-registered visitor verified & auto-filled: ${data.visitor.fullName} (${data.visitor.company})`,
-            isSuccess: true,
-          });
+        if (data.found && (data.visitor || (data.matches && data.matches.length > 0))) {
+          const match = data.visitor || data.matches[0];
+          applyVisitorToForm(match);
         } else {
+          setActiveCheckedInVisitor(null);
           setLookupFeedback({
-            message: `No pre-registered visitor match for "${query}". Please enter credentials manually below.`,
+            message: `No visitor record found matching "${query}". Please enter details manually below.`,
             isSuccess: false,
           });
         }
@@ -261,37 +309,108 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
     }
   };
 
-  const applyVisitorToForm = (visitor: RegisteredVisitor) => {
-    setVisitorName(visitor.fullName);
-    setIdType(visitor.idType);
-    setIdNumber(visitor.idNumber);
+  const applyVisitorToForm = (visitor: any) => {
+    setVisitorName(visitor.fullName || '');
+    setIdType(visitor.idType || 'NATIONAL_ID');
+    setIdNumber(visitor.idNumber || '');
     setCountryOfOrigin(visitor.countryOfOrigin || 'Zimbabwe');
-    setVisitorContactNumber(visitor.phoneNumber);
-    if (!vehicleRegNumber) {
+    setVisitorContactNumber(visitor.phoneNumber || '');
+    if (visitor.vehicleReg) {
+      setVehicleRegNumber(visitor.vehicleReg);
+    } else if (!vehicleRegNumber) {
       setVehicleRegNumber('AFE-' + Math.floor(1000 + Math.random() * 9000));
     }
     setPurposeOfVisit(
-      visitor.category === 'CONTRACTOR'
+      visitor.purpose ||
+      (visitor.category === 'CONTRACTOR'
         ? 'Scheduled maintenance of facility equipment'
         : visitor.category === 'VET_INSPECTOR'
         ? 'Biosecurity health inspection & herd surveillance'
-        : 'Official visit / supplier delivery'
+        : 'Official visit / supplier delivery')
     );
-    setFromOrigin(visitor.company || 'Triple C Partner');
+    setFromOrigin(visitor.origin || visitor.company || 'Triple C Partner');
     if (visitor.photoUrl) {
       setCapturedPhoto(visitor.photoUrl);
     }
     if (visitor.embeddingVector) {
       setCapturedEmbedding(visitor.embeddingVector);
     }
+    if (visitor.comments) {
+      setComments(visitor.comments);
+    }
+
+    if (visitor.isCurrentlyInside || visitor.status === 'CHECKED_IN') {
+      setActiveCheckedInVisitor(visitor);
+      setLookupFeedback({
+        message: `ACTIVE CHECK-IN: Visitor ${visitor.fullName} (ID: ${visitor.idNumber}) is currently inside the facility (Badge: ${visitor.badgeNumber || 'Active'}). Cannot check in twice. You can process check-out below.`,
+        isSuccess: false,
+      });
+    } else if (visitor.status === 'QUARANTINED') {
+      setActiveCheckedInVisitor(null);
+      setLookupFeedback({
+        message: `BIOSECURITY QUARANTINE WARNING: Visitor ${visitor.fullName} was previously denied access due to quarantine flags. Full re-evaluation required.`,
+        isSuccess: false,
+      });
+    } else {
+      setActiveCheckedInVisitor(null);
+      setLookupFeedback({
+        message: `Visitor profile auto-filled: ${visitor.fullName} (${visitor.company || visitor.origin || 'Visitor'})`,
+        isSuccess: true,
+      });
+    }
 
     setValidationErrors([]);
+  };
+
+  // Perform immediate visitor check-out
+  const handleCheckOutVisitor = async (identifier = idNumber || visitorContactNumber) => {
+    if (!identifier) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(apiUrl('/api/gate/check-out'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idNumber: identifier,
+          phoneNumber: visitorContactNumber,
+          operatorName: 'Gate Operator (Field)',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setActiveCheckedInVisitor(null);
+        setLookupFeedback({
+          message: data.message || `Visitor ${visitorName} successfully checked out.`,
+          isSuccess: true,
+        });
+        localStorage.removeItem('tcp_gate_draft_form');
+        handleResetForm();
+      } else {
+        setLookupFeedback({
+          message: data.error || 'Check-out request failed.',
+          isSuccess: false,
+        });
+      }
+    } catch {
+      setLookupFeedback({
+        message: 'Network error processing check-out request.',
+        isSuccess: false,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Client-side Validation
   const validateForm = (): boolean => {
     const errs: string[] = [];
     const cleanContact = visitorContactNumber.replace(/\D/g, '');
+
+    if (activeCheckedInVisitor) {
+      errs.push(
+        `DUPLICATE CHECK-IN PREVENTED: Visitor ${activeCheckedInVisitor.fullName} with ID/Passport "${activeCheckedInVisitor.idNumber}" is already checked-in inside the facility. They cannot check in twice; check-out is required first.`
+      );
+    }
 
     if (!visitorName.trim()) {
       errs.push('Visitor Full Name is required.');
@@ -344,6 +463,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
       vehicleRegNumber: vehicleRegNumber.trim() || undefined,
       purposeOfVisit,
       fromOrigin,
+      comments: comments.trim() || undefined,
       dynamicResponses: dynamicAnswers,
       digitalSignature,
       capturedFaceImage: capturedPhoto || undefined,
@@ -356,6 +476,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
     if (isOfflineMode) {
       queueOfflineSubmission(payload);
       updateOfflineCount();
+      localStorage.removeItem('tcp_gate_draft_form');
 
       // Offline evaluation fallback
       let isOfflinePass = true;
@@ -432,6 +553,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
         return;
       }
 
+      localStorage.removeItem('tcp_gate_draft_form');
       setDecisionResult(data);
       setIsModalOpen(true);
     } catch {
@@ -452,6 +574,8 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
     setVehicleRegNumber('');
     setPurposeOfVisit('');
     setFromOrigin('');
+    setComments('');
+    setActiveCheckedInVisitor(null);
     setDigitalSignature('');
     setCapturedPhoto('');
     setCapturedEmbedding(undefined);
@@ -459,6 +583,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
     setValidationErrors([]);
     setLookupQuery('');
     setLookupFeedback(null);
+    localStorage.removeItem('tcp_gate_draft_form');
     fetchActiveQuestions();
   };
 
@@ -521,14 +646,14 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
           </div>
         </div>
 
-        {/* Pre-Approved Visitor Lookup Bar */}
+        {/* Visitor Identity & Access Lookup Bar (All Statuses) */}
         <div ref={lookupDropdownRef} className="mt-4 pt-3 border-t border-slate-800 space-y-2 relative">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <Search className="w-3.5 h-3.5 text-emerald-400" />
-              Pre-Approved Visitor Lookup:
+              Visitor Identity &amp; Access Lookup (All Statuses):
             </span>
-            <span className="text-[10px] text-slate-500">Live search by Name, Phone, National ID or Passport</span>
+            <span className="text-[10px] text-slate-500">Live search by Phone (e.g. 263773466252), National ID, or Passport</span>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2 relative">
@@ -557,7 +682,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
                     setShowSuggestions(false);
                   }
                 }}
-                placeholder="Type name, phone, or ID to find & auto-fill..."
+                placeholder="Enter Phone (e.g. 263773466252), National ID, or Passport..."
                 className="w-full pl-9 pr-8 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-medium placeholder:font-sans placeholder:text-slate-500"
               />
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
@@ -711,7 +836,7 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
                   required
                   value={visitorName}
                   onChange={(e) => setVisitorName(e.target.value)}
-                  placeholder="e.g. Tendai Chitepo"
+                  placeholder="Manlow Charumbira"
                   className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500"
                 />
                 <User className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
@@ -1042,6 +1167,24 @@ export const GateScannerView: React.FC<GateScannerViewProps> = ({ logoUrl: propL
                 />
               </div>
             )}
+          </div>
+
+          {/* Comments if ANY (Before Signatures) */}
+          <div className="space-y-1.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <label className="block text-xs font-bold text-slate-200">
+              Visitor Comments &amp; Remarks <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <p className="text-[11px] text-slate-400">
+              Add any comments, special observations, or remarks before signing the declaration.
+            </p>
+            <textarea
+              rows={2}
+              maxLength={2000}
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              placeholder="Enter any comments if any (e.g. escort notes, luggage details, specific requests)..."
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 text-xs"
+            />
           </div>
 
           {/* Optional Digital Signature */}

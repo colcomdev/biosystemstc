@@ -15,6 +15,7 @@ import {
   Layers,
   Sparkles,
   HelpCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { DynamicFormQuestion, QuestionType, RedAlertTrigger } from '../../types';
 import { apiUrl } from '../../lib/api';
@@ -40,7 +41,7 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleResetDefaults = async () => {
-    if (!confirm('Restore baseline African Swine Fever biosecurity declaration questions?')) return;
+    if (!confirm('Restore baseline Triple C Pigs biosecurity declaration questions?')) return;
     setIsResetting(true);
     try {
       const res = await fetch(apiUrl('/api/form-questions/reset-defaults'), {
@@ -71,7 +72,7 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
 
   const handleDelete = async (q: DynamicFormQuestion) => {
     if (q.isBaseline) {
-      alert('Baseline African Swine Fever rules cannot be deleted. You may deactivate them.');
+      alert('Baseline Triple C Pigs biosecurity rules cannot be deleted. You may deactivate them.');
       return;
     }
     if (!confirm(`Delete question: "${q.prompt}"?`)) return;
@@ -168,7 +169,7 @@ export const DynamicQuestionBuilder: React.FC<DynamicQuestionBuilderProps> = ({
             onClick={handleResetDefaults}
             disabled={isResetting}
             className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl transition flex items-center gap-1.5 border border-slate-700"
-            title="Restore baseline African Swine Fever questions"
+            title="Restore baseline Triple C Pigs biosecurity questions"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isResetting ? 'animate-spin' : ''}`} />
             {isResetting ? 'Restoring...' : 'Restore Defaults'}

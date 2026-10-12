@@ -524,11 +524,11 @@ export async function saveVisitorToDb(v: RegisteredVisitor): Promise<boolean> {
 }
 
 export async function fetchVisitsFromDb(): Promise<GateLogRecord[]> {
-  const rows = await dbQuery(`
+  const result = await dbQuery(`
     SELECT * FROM visits ORDER BY created_at DESC;
   `);
-  if (!rows) return [];
-  return rows.map((r: any) => ({
+  if (!result || !result.rows) return [];
+  return result.rows.map((r: any) => ({
     id: r.id,
     timestamp: r.timestamp,
     visitorName: r.visitor_name,
@@ -552,11 +552,11 @@ export async function fetchVisitsFromDb(): Promise<GateLogRecord[]> {
 }
 
 export async function fetchAlertsFromDb(): Promise<BiosecurityAlert[]> {
-  const rows = await dbQuery(`
+  const result = await dbQuery(`
     SELECT * FROM biosecurity_alerts ORDER BY created_at DESC;
   `);
-  if (!rows) return [];
-  return rows.map((r: any) => ({
+  if (!result || !result.rows) return [];
+  return result.rows.map((r: any) => ({
     id: r.id,
     decisionId: r.decision_id,
     visitorName: r.visitor_name,
@@ -586,11 +586,14 @@ export async function fetchRealTelemetryFromDb(): Promise<TelemetryStats> {
     SELECT COUNT(*)::int AS alert_count FROM biosecurity_alerts WHERE priority = 'CRITICAL' OR status = 'PENDING_ACK';
   `);
 
-  const totalAttempts = result && result[0] ? Number(result[0].total_attempts) : 0;
-  const granted = result && result[0] ? Number(result[0].granted_count) : 0;
-  const denied = result && result[0] ? Number(result[0].denied_count) : 0;
-  const activeOccupancy = result && result[0] ? Number(result[0].active_occupancy) : 0;
-  const alertCount = alertsResult && alertsResult[0] ? Number(alertsResult[0].alert_count) : 0;
+  const row = result?.rows?.[0] || {};
+  const alertRow = alertsResult?.rows?.[0] || {};
+
+  const totalAttempts = Number(row.total_attempts || 0);
+  const granted = Number(row.granted_count || 0);
+  const denied = Number(row.denied_count || 0);
+  const activeOccupancy = Number(row.active_occupancy || 0);
+  const alertCount = Number(alertRow.alert_count || 0);
 
   return {
     todayTotalAttempts: totalAttempts,
@@ -602,12 +605,12 @@ export async function fetchRealTelemetryFromDb(): Promise<TelemetryStats> {
   };
 }
 
-export async function updateVisitCheckOutInDb(id: string, checkOutTime: string): Promise<boolean> {
+export async function updateVisitCheckOutInDb(identifier: string, checkOutTime: string): Promise<boolean> {
   const result = await dbQuery(`
     UPDATE visits
     SET check_out_time = $1, is_inside = false, status = 'CHECKED_OUT'
-    WHERE id = $2;
-  `, [checkOutTime, id]);
+    WHERE id = $2 OR id_number = $2;
+  `, [checkOutTime, identifier]);
   return result !== null;
 }
 
@@ -668,11 +671,11 @@ export async function saveAlertToDb(alert: BiosecurityAlert): Promise<boolean> {
 }
 
 export async function fetchAppUsersFromDb(): Promise<(User & { passwordHash?: string })[]> {
-  const rows = await dbQuery(`
+  const result = await dbQuery(`
     SELECT * FROM app_users ORDER BY created_at ASC;
   `);
-  if (!rows) return [];
-  return rows.map((r: any) => ({
+  if (!result || !result.rows) return [];
+  return result.rows.map((r: any) => ({
     id: r.id,
     username: r.username,
     passwordHash: r.password_hash,
@@ -720,11 +723,11 @@ export async function saveAppUserToDb(user: User & { passwordHash?: string }): P
 }
 
 export async function fetchITAuditLogsFromDb(): Promise<ITActivityLog[]> {
-  const rows = await dbQuery(`
+  const result = await dbQuery(`
     SELECT * FROM it_audit_logs ORDER BY timestamp DESC LIMIT 100;
   `);
-  if (!rows) return [];
-  return rows.map((r: any) => ({
+  if (!result || !result.rows) return [];
+  return result.rows.map((r: any) => ({
     id: r.id,
     timestamp: r.timestamp,
     actorUsername: r.actor_username,

@@ -87,6 +87,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
   const [vehicleRegNumber, setVehicleRegNumber] = useState('');
   const [purposeOfVisit, setPurposeOfVisit] = useState('');
   const [fromOrigin, setFromOrigin] = useState('');
+  const [comments, setComments] = useState('');
 
   // Dynamic Form Questions State (Default biosecurity questions so never blank)
   const [questions, setQuestions] = useState<DynamicFormQuestion[]>(DEFAULT_DECLARATION_QUESTIONS);
@@ -139,7 +140,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
         }
       }
     } catch (err) {
-      console.warn('Using baseline African Swine Fever questions:', err);
+      console.warn('Using baseline Triple C Pigs biosecurity questions:', err);
     }
   };
 
@@ -240,6 +241,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
       vehicleRegNumber: vehicleRegNumber.trim() || undefined,
       purposeOfVisit,
       fromOrigin,
+      comments: comments.trim() || undefined,
       dynamicResponses: dynamicAnswers,
       digitalSignature,
       capturedFaceImage: capturedPhoto || undefined,
@@ -284,6 +286,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
     setVehicleRegNumber('');
     setPurposeOfVisit('');
     setFromOrigin('');
+    setComments('');
     setDigitalSignature('');
     setCapturedPhoto(null);
     setLookupQuery('');
@@ -441,7 +444,7 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
                 required
                 value={visitorName}
                 onChange={(e) => setVisitorName(e.target.value)}
-                placeholder="e.g. Farai Matthews"
+                placeholder="Manlow Charumbira"
                 className={`w-full px-3.5 py-2.5 rounded-xl text-sm border outline-none transition ${
                   isDark
                     ? 'bg-slate-950 border-slate-700 text-white focus:border-emerald-500'
@@ -769,6 +772,28 @@ export const MobileScannerForm: React.FC<MobileScannerFormProps> = ({
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Comments if ANY (Before Signatures) */}
+          <div className={`p-3.5 rounded-xl border space-y-1.5 ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+            <label className="block text-xs font-bold">
+              Visitor Comments &amp; Remarks <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Add any comments, special observations, or remarks before signing the declaration.
+            </p>
+            <textarea
+              rows={2}
+              maxLength={2000}
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              placeholder="Enter any comments if any (e.g. escort notes, luggage details, specific requests)..."
+              className={`w-full px-3 py-2 rounded-xl text-xs border outline-none transition ${
+                isDark
+                  ? 'bg-slate-900 border-slate-700 text-white focus:border-emerald-500'
+                  : 'bg-white border-slate-300 text-slate-900 focus:border-emerald-500'
+              }`}
+            />
           </div>
 
           {/* Optional Digital Legal Signature */}

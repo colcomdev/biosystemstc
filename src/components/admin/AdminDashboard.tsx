@@ -32,6 +32,7 @@ import {
   Settings,
   LogOut,
   Mail,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   BiosecurityAlert,
@@ -48,6 +49,8 @@ import { PreRegisterModal } from './PreRegisterModal';
 import { DynamicQuestionBuilder } from './DynamicQuestionBuilder';
 import { SystemSettingsView } from './SystemSettingsView';
 import { ReportEmailConfigView } from './ReportEmailConfigView';
+import { GateLogDetailModal } from './GateLogDetailModal';
+import { ITAdminManagementView } from './ITAdminManagementView';
 import { apiUrl, resolveAssetUrl } from '../../lib/api';
 
 interface AdminDashboardProps {
@@ -66,9 +69,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogoChange,
 }) => {
   // Authentication & MFA State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [usernameInput, setUsernameInput] = useState('admin');
-  const [passwordInput, setPasswordInput] = useState('admin');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('tcp_admin_authenticated') === 'true';
+  });
+  const [usernameInput, setUsernameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
   // MFA Flow
@@ -77,17 +82,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [mfaEmail, setMfaEmail] = useState('admin@triplecpigs.co.zw');
   const [debugOtp, setDebugOtp] = useState<string | null>(null);
 
-  // Active Tab
-  const [activeTab, setActiveTab] = useState<'alerts' | 'builder' | 'logs' | 'whitelist' | 'email_reports' | 'settings'>('alerts');
+  // Active Tab with LocalStorage persistence
+  const [activeTab, setActiveTab] = useState<
+    'alerts' | 'builder' | 'logs' | 'whitelist' | 'email_reports' | 'settings' | 'it_admin'
+  >(() => {
+    return (localStorage.getItem('tcp_admin_active_tab') as any) || 'alerts';
+  });
 
-  // Live Data State
+  const handleSelectTab = (
+    tab: 'alerts' | 'builder' | 'logs' | 'whitelist' | 'email_reports' | 'settings' | 'it_admin'
+  ) => {
+    setActiveTab(tab);
+    localStorage.setItem('tcp_admin_active_tab', tab);
+  };
+
+  // Selected Log for User Details Pop-up Modal
+  const [selectedLog, setSelectedLog] = useState<GateLogRecord | null>(null);
+
+  // Live Data State (Dynamic from DB)
   const [telemetry, setTelemetry] = useState<TelemetryStats>({
     todayTotalAttempts: 0,
     todayGranted: 0,
     todayDenied: 0,
-    activeOnSiteOccupancy: 14,
+    activeOnSiteOccupancy: 0,
     quarantineAlertsCount: 0,
-    averageDecisionTimeMs: 135,
+    averageDecisionTimeMs: 128,
   });
   const [alerts, setAlerts] = useState<BiosecurityAlert[]>([]);
   const [logs, setLogs] = useState<GateLogRecord[]>([]);
@@ -142,10 +161,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           setTelemetry((prev) => ({
             ...prev,
             activeOnSiteOccupancy: payload.activeOccupants,
-            todayGranted: prev.todayGranted + 1,
-            todayTotalAttempts: prev.todayTotalAttempts + 1,
           }));
         }
+        fetchTelemetry();
         fetchLogs();
       } catch (err) {
         console.error(err);
@@ -255,6 +273,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setDebugOtp(data.debugOtp);
       } else {
         setIsAuthenticated(true);
+        localStorage.setItem('tcp_admin_authenticated', 'true');
       }
     } catch (err: any) {
       setAuthError(err?.message || 'Connection error during authentication. Check your network or backend URL.');
@@ -292,6 +311,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
 
       setIsAuthenticated(true);
+      localStorage.setItem('tcp_admin_authenticated', 'true');
       setMfaRequired(false);
     } catch {
       setAuthError('Verification failed.');
@@ -402,28 +422,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Username (Default: admin)
+                Username
               </label>
               <input
                 type="text"
                 required
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="admin"
+                placeholder="Enter username"
                 className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:border-emerald-500 outline-none font-mono"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Password (Default: admin)
+                Password
               </label>
               <input
                 type="password"
                 required
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="admin"
+                placeholder="••••••••"
                 className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:border-emerald-500 outline-none font-mono"
               />
             </div>
@@ -498,9 +518,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </form>
         )}
 
-        <div className="pt-2 border-t border-slate-800/80 text-[11px] text-slate-400 text-center">
-          Default Credentials: <code className="text-emerald-400 font-mono">admin</code> /{' '}
-          <code className="text-emerald-400 font-mono">admin</code>
+        <div className="pt-2 border-t border-slate-800/80 text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
+          <Lock className="w-3.5 h-3.5 text-slate-400" />
+          <span>Restricted Portal • IT Admin &amp; Security Roles Only</span>
         </div>
       </div>
     );
@@ -558,7 +578,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex items-center justify-between">
           <div>
             <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400 block mb-1">
-              ASF / FMD Quarantine Flags
+              Swine Biosecurity Quarantine Flags
             </span>
             <div className="text-2xl font-black text-amber-400 font-mono">
               {telemetry.quarantineAlertsCount}
@@ -589,7 +609,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            onClick={() => setActiveTab('alerts')}
+            onClick={() => handleSelectTab('alerts')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
               activeTab === 'alerts'
                 ? 'bg-rose-600 text-white shadow-md shadow-rose-950/50'
@@ -607,7 +627,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={() => setActiveTab('builder')}
+            onClick={() => handleSelectTab('builder')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
               activeTab === 'builder'
                 ? 'bg-emerald-600 text-white shadow'
@@ -620,7 +640,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={() => setActiveTab('logs')}
+            onClick={() => handleSelectTab('logs')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
               activeTab === 'logs'
                 ? 'bg-slate-700 text-white shadow'
@@ -633,7 +653,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={() => setActiveTab('whitelist')}
+            onClick={() => handleSelectTab('whitelist')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
               activeTab === 'whitelist'
                 ? 'bg-slate-700 text-white shadow'
@@ -646,7 +666,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={() => setActiveTab('email_reports')}
+            onClick={() => handleSelectTab('email_reports')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
               activeTab === 'email_reports'
                 ? 'bg-cyan-600 text-white shadow'
@@ -659,7 +679,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={() => setActiveTab('settings')}
+            onClick={() => handleSelectTab('it_admin')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              activeTab === 'it_admin'
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-indigo-400" />
+            IT Admin &amp; Users
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectTab('settings')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
               activeTab === 'settings'
                 ? 'bg-slate-700 text-white shadow'
@@ -693,7 +726,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={() => setIsAuthenticated(false)}
+            onClick={() => {
+              setIsAuthenticated(false);
+              localStorage.removeItem('tcp_admin_authenticated');
+            }}
             className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition"
             title="Lock Portal / Sign Out"
           >
@@ -904,57 +940,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-sans">
-                {filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-850/50 transition">
-                    <td className="p-3 whitespace-nowrap font-mono text-[11px] text-slate-400">
-                      {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td className="p-3 font-semibold text-white whitespace-nowrap">
-                      {log.visitorName}
-                      {log.syncedFromOffline && (
-                        <span className="ml-1 text-[9px] bg-amber-950 text-amber-300 px-1 py-0.2 rounded border border-amber-800">
-                          OFFLINE SYNC
+                {filteredLogs.map((log) => {
+                  const isInside = log.isInside ?? (log.status === 'GRANTED' && !log.checkOutTime);
+                  return (
+                    <tr
+                      key={log.id}
+                      onClick={() => setSelectedLog(log)}
+                      className="hover:bg-slate-800/70 transition cursor-pointer group"
+                      title="Click to view detailed visitor profile, credentials & biosecurity audit log"
+                    >
+                      <td className="p-3 whitespace-nowrap font-mono text-[11px] text-slate-400 group-hover:text-slate-200">
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="p-3 font-semibold text-white whitespace-nowrap group-hover:text-emerald-300 transition">
+                        {log.visitorName}
+                        {log.syncedFromOffline && (
+                          <span className="ml-1 text-[9px] bg-amber-950 text-amber-300 px-1 py-0.2 rounded border border-amber-800">
+                            OFFLINE SYNC
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                        <span className="text-[10px] text-slate-400 block">{log.idType}</span>
+                        {log.idNumber}
+                      </td>
+                      <td className="p-3 text-cyan-300 whitespace-nowrap">
+                        {log.countryOfOrigin}
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                        +{log.phoneNumber}
+                      </td>
+                      <td className="p-3 max-w-xs truncate" title={`${log.origin} - ${log.purpose}`}>
+                        <span className="text-slate-200">{log.origin}</span>
+                        <span className="text-slate-400 block text-[11px] truncate">{log.purpose}</span>
+                      </td>
+                      <td className="p-3 whitespace-nowrap font-mono text-[11px]">
+                        <span
+                          className={
+                            log.similarityScore >= 0.85 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'
+                          }
+                        >
+                          {(log.similarityScore * 100).toFixed(1)}%
                         </span>
-                      )}
-                    </td>
-                    <td className="p-3 font-mono text-[11px] text-slate-300 whitespace-nowrap">
-                      <span className="text-[10px] text-slate-400 block">{log.idType}</span>
-                      {log.idNumber}
-                    </td>
-                    <td className="p-3 text-cyan-300 whitespace-nowrap">
-                      {log.countryOfOrigin}
-                    </td>
-                    <td className="p-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">
-                      +{log.phoneNumber}
-                    </td>
-                    <td className="p-3 max-w-xs truncate" title={`${log.origin} - ${log.purpose}`}>
-                      <span className="text-slate-200">{log.origin}</span>
-                      <span className="text-slate-400 block text-[11px] truncate">{log.purpose}</span>
-                    </td>
-                    <td className="p-3 whitespace-nowrap font-mono text-[11px]">
-                      <span
-                        className={
-                          log.similarityScore >= 0.85 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'
-                        }
-                      >
-                        {(log.similarityScore * 100).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      {log.status === 'GRANTED' ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-[11px]">
-                          <CheckCircle2 className="w-3 h-3" />
-                          GRANTED
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-rose-400 font-bold px-2 py-0.5 rounded bg-rose-950/70 border border-rose-800 text-[11px]">
-                          <XCircle className="w-3 h-3" />
-                          DENIED
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        {log.status === 'GRANTED' ? (
+                          isInside ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-[11px]">
+                              <CheckCircle2 className="w-3 h-3" />
+                              INSIDE
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-slate-300 font-bold px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px]">
+                              CHECKED OUT
+                            </span>
+                          )
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-rose-400 font-bold px-2 py-0.5 rounded bg-rose-950/70 border border-rose-800 text-[11px]">
+                            <XCircle className="w-3 h-3" />
+                            DENIED
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1022,7 +1072,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* TAB 5: Email Alerts & EOD PDF Reports */}
       {activeTab === 'email_reports' && <ReportEmailConfigView />}
 
-      {/* TAB 6: System Settings & Toggleable MFA */}
+      {/* TAB 6: IT Admin Rights & User Management */}
+      {activeTab === 'it_admin' && <ITAdminManagementView currentUser={currentUser} />}
+
+      {/* TAB 7: System Settings & Toggleable MFA */}
       {activeTab === 'settings' && <SystemSettingsView onLogoUpdated={onLogoChange} />}
 
       {/* Modals */}
@@ -1035,6 +1088,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         isOpen={isPreRegisterModalOpen}
         onClose={() => setIsPreRegisterModalOpen(false)}
         onVisitorAdded={(newVis) => setVisitors((prev) => [newVis, ...prev])}
+      />
+
+      {/* Gate Log Visitor Details Pop-up Modal */}
+      <GateLogDetailModal
+        log={selectedLog}
+        onClose={() => setSelectedLog(null)}
+        onCheckOutSuccess={(updated) => {
+          setSelectedLog(updated);
+          setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+          fetchTelemetry();
+        }}
       />
     </div>
   );
